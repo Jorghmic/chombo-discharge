@@ -1,0 +1,299 @@
+{
+    "gas" : {
+	// Definition of the background gas. 
+	"background species" : [
+	    {
+		"id": "O2",              // Species ID
+		"molar fraction" : {     // Specification of how we compute the molar fraction
+		    "type" : "constant", // Constant molar fraction
+		    "value" : 0.2        // Molar fraction value
+		}
+	    },
+	    {
+		"id" : "N2",                            // Species ID
+		"molar fraction" : {                    // Specification of how we compute the molar fraction
+		    "type" : "constant",                // Specify table vs height
+		    "value": 0.8
+		}
+	    }
+	],
+	// Specify which gas law we use. The user can define multiple gas laws and then later specify which one to use.
+	"law" : {
+	    "id" : "my_ideal_gas", // Specify which gas law we use.
+	    "plot" : true,         // Turn on/off plotting.
+	    "my_ideal_gas" : {
+		"type" : "ideal",
+		"temperature" : 300,
+		"pressure" : 1.0
+	    }
+	}
+    },
+    "alpha": {
+	"type": "auto",
+	"species": "e"
+    },
+    "eta": {
+	"type": "auto",
+	"species": "e"
+    },    
+    "plasma species" :
+    [
+	// List of plasma species that are tracked. This is an array of species
+	// with various identifiers, some of which are always required (id, Z, type, mobile, diffusive) and
+	// others which are secondary requirements.
+	{
+            "id": "e",          // Species ID
+	    "Z" : -1,           // Charge number
+	    "solver" : "ito",   // Solver type. Either 'ito' or 'cdr'
+	    "mobile" : true,    // Mobile or not
+	    "diffusive" : true, // Diffusive or not
+	    "mobility" : {
+		// Specification of the mobilility coefficient when the species is mobile. User can specify various forms of the mobility. E.g. constant, function-based, or
+		// tabulated vs E/N
+		"type" : "table vs E/N",                      // Specification of tabulated mobility lookup method
+		"file" : "transport_data.dat",                    // File containg the mobility data
+		"header" : "E/N (Td)\tMobility *N (1/m/V/s)", // Line immediately preceding the colum data
+		"E/N" : 0,                                    // Column containing E/N
+		"mu*N" : 1,                                   // Column containing mu*N
+		"min E/N" : 1,                                // Minimum E/N kept when resampling table
+		"max E/N" : 2E6,                              // Maximum E/N kept when resampling table
+		"points" : 1000,                              // Number of grid points kept when resampling the table
+		"spacing" : "exponential",                    // Grid point spacing when resampling the table
+		"E/N scale" : 1.0,                            // Optional argument for scaling mobility coefficient
+		"mu*N scale" : 1.0                            // Optional argument for scaling the E/N column
+	    },
+	    "diffusion" : {
+		// Definition of the diffusion coefficient similiar to mobility coefficient above.
+		"type" : "table vs E/N",
+		"file" : "transport_data.dat",
+		"header" : "E/N (Td)\tDiffusion coefficient *N (1/m/s)",
+		"E/N" : 0,
+		"D*N" : 1,
+		"min E/N" : 10,
+		"max E/N" : 2E6,
+		"spacing" : "exponential",
+		"points" : 1000
+	    },
+	    "temperature": {
+		// Definition of the temperature, similar to the mobility coefficient above.
+		"type": "table vs E/N",
+		"file": "transport_data.dat",
+		"header" : "E/N (Td)\tMean energy (eV)",
+		"E/N" : 0,
+		"eV" : 1,
+		"min E/N" : 10,
+		"max E/N" : 2E6,
+		"E/N scale": 1.0,
+		"eV scale": 1.0,
+		"spacing" : "exponential",
+		"points" : 1000
+	    },
+	    "initial particles" : [
+		{
+		    "list" : {
+			"file": "initial_particles.txt",
+			"x column": 0,
+			"y column": 1,
+			"z column": 2,
+			"w column": 3
+		    }
+		}
+	    ]
+        },
+	{
+	    // Definition of O2+ plasma species.
+            "id": "O2+",            // Species ID
+	    "Z" : 1,                // Charge number
+	    "solver" : "ito",       // Solver type. Either 'ito' or 'cdr'
+	    "mobile" : true,       // Mobile or not
+	    "diffusive" : true,    // Diffusive or not
+	    "mobility": {           // Specification of the mobility
+		"type": "constant", // Mobility is constant 
+		"value": 2E-4       // Mobility value is 2E-4
+	    },
+	    "diffusion": {          // Specification of diffusion coefficient
+		"type": "constant", // Diffusion coefficient is constant
+		"value": 5E-6        // Diffusion coefficient is 0.0
+	    }		
+	},
+	{
+	    // Definition of O- plasma species.
+            "id": "O-",            // Species ID
+	    "Z" : -1,               // Charge number
+	    "solver" : "ito",       // Solver type. Either 'ito' or 'cdr'
+	    "mobile" : true,       // Mobile or not
+	    "diffusive" : true,    // Diffusive or not
+	    "mobility": {           // Specification of the mobility
+		"type": "constant", // Mobility is constant 
+		"value": 2E-4       // Mobility value is 2E-4
+	    },
+	    "diffusion": {          // Specification of diffusion coefficient
+		"type": "constant", // Diffusion coefficient is constant
+		"value": 5E-6        // Diffusion coefficient is 0.0
+	    }		
+	},	
+	{
+	    // Definition of N2+ plasma species.
+	    "id": "N2+",            // Species ID
+	    "Z" : 1,                // Charge number
+	    "solver" : "ito",       // Solver type. Either 'ito' or 'cdr'
+	    "mobile" : true,       // Mobile or not
+	    "diffusive" : true,    // Diffusive or not
+	    "mobility": {           // Specification of the mobility
+		"type": "constant", // Mobility is constant 
+		"value": 2E-4       // Mobility value is 2E-4
+	    },
+	    "diffusion": {          // Specification of diffusion coefficient
+		"type": "constant", // Diffusion coefficient is constant
+		"value": 5E-6        // Diffusion coefficient is 0.0
+	    }
+	},
+	{
+	    // Definition of the light-emitting first positive system of N2
+	    "id": "1PN2",
+	    "Z": 0,
+	    "solver": "cdr",
+	    "mobile": false,
+	    "diffusive": false
+	}		    
+    ],
+    "photon species":
+    [
+	// Definition of the photon species, and which species that will absorb these photons. This data
+	// contains the absorption data for O2 in the Zheleznyak model. 
+	{
+	    "id": "Y",                  // Photon species id. Must be unique
+	    "kappa": {                  // Specification of absorption coefficient. 
+		"type": "stochastic A", // Specify 'stochastic A' model. See e.g., Pasko sprite paper
+		"f1":   2.925E15,       // Lower frequency
+		"f2":   3.059E15,       // Upper frequency
+		"chi min": 2.625E-2,    // Minimum coefficient
+		"chi max": 1.5,         // Maximum coefficient
+		"neutral": "O2"         // Partial pressure of neutral that is involved. 
+	    }
+	}
+    ],
+    "plasma reactions":
+    [
+	// List of plasma reactions. 
+	{
+	    // Tabulated reaction rate for e + N2 -> e + e + N2+
+	    "reaction": "e + N2 -> e + e + N2+",             // Reaction. Must contain the '->'
+	    "description": "Rate/N2 ionization",             // Optional description of the reaction. Used when plotting the rate
+	    "type": "table vs E/N",                          // Specification of reaction rate type
+	    "file" : "transport_data.dat",                   // File containing the data
+	    "header" : "C25   N2    Ionization    15.60 eV", // Header line preceding data
+	    "E/N column" : 0,                                // Optional specification of column containing E/N (defaults to 0)
+	    "rate/N column" : 1,                             // Optional specification of column containing alpha/N (defaults to 1)
+	    "min E/N" : 1.0,                                 // Optional truncation of minium E/N kept when resampling the table (occurs after scaling)
+	    "max E/N" : 1000.0,                              // Optional truncation of maximum E/N kept when resampling the table (happens after scaling)
+	    "num points" : 1000,                             // Optional number of points kept when resamplnig the table (defaults to 1000)
+	    "spacing" : "exponential",                       // Optional spcification of table representation. Defaults to 'exponential' but can also be 'linear'
+	    "scale E/N" : 1.0,                               // Optional scaling of the column containing E/N
+	    "scale rate/N" : 1.0,                            // Optional scaling of the column containing rate/E
+	    "plot": false                                    // Optional. If true, the reaction rate will be plotted.
+	},
+	{
+	    // Tabulated reaction rate for e + O2 -> e + e + O2+	    
+	    "reaction": "e + O2 -> e + e + O2+",             // Reaction. Must contain the '->'
+	    "description": "Rate/O2 ionization",             // Optional description of the reaction. Used when plotting the rate
+	    "type": "table vs E/N",                          // Specification of reaction rate type
+	    "file" : "transport_data.dat",                   // File containing the data
+	    "header" : "C42   O2    Ionization    12.06 eV", // Header line preceding data
+	    "E/N column" : 0,                                // Optional specification of column containing E/N (defaults to 0)
+	    "rate/N column" : 1,                             // Optional specification of column containing alpha/N (defaults to 1)
+	    "min E/N" : 1.0,                                 // Optional truncation of minium E/N kept when resampling the table (occurs after scaling)
+	    "max E/N" : 1000.0,                              // Optional truncation of maximum E/N kept when resampling the table (happens after scaling)
+	    "num points" : 1000,                             // Optional number of points kept when resamplnig the table (defaults to 1000)
+	    "spacing" : "exponential",                       // Optional spcification of table representation. Defaults to 'exponential' but can also be 'linear'
+	    "scale E/N" : 1.0,                               // Optional scaling of the column containing E/N
+	    "scale rate/N" : 1.0,                            // Optional scaling of the column containing rate/E
+	    "plot": false                                    // Optional. If true, the reaction rate will be plotted.
+	},
+	{
+	    // Tabulated reaction rate for e + O2 -> O + O-
+	    "reaction": "e + O2 -> O- + (O)",    // Reaction. Must contain the '->'
+	    "description": "Rate/O2 attachment", // Optional description of the reaction. Used when plotting the rate
+	    "type": "table vs E/N",              // Specification of reaction rate type
+	    "file" : "transport_data.dat",       // File containing the data
+	    "header" : "C27   O2    Attachment", // Header line preceding data
+	    "E/N column" : 0,                    // Optional specification of column containing E/N (defaults to 0)
+	    "rate/N column" : 1,                 // Optional specification of column containing alpha/N (defaults to 1)
+	    "min E/N" : 1.0,                     // Optional truncation of minium E/N kept when resampling the table (occurs after scaling)
+	    "max E/N" : 1000.0,                  // Optional truncation of maximum E/N kept when resampling the table (happens after scaling)
+	    "num points" : 1000,                 // Optional number of points kept when resamplnig the table (defaults to 1000)
+	    "spacing" : "exponential",           // Optional spcification of table representation. Defaults to 'exponential' but can also be 'linear'
+	    "scale E/N" : 1.0,                   // Optional scaling of the column containing E/N
+	    "scale rate/N" : 1.0,                // Optional scaling of the column containing rate/E
+	    "plot": false                        // Optional. If true, the reaction rate will be plotted.
+	},
+	{
+	    // Tabulated reaction rate for e + N2 -> e + Y + N2
+	    "reaction": "e + N2 -> e + Y + (N2)",            // Reaction. Must contain the '->'
+	    "description": "Rate/Photon generation",         // Optional description of the reaction. Used when plotting the rate
+	    "type": "table vs E/N",                          // Specification of reaction rate type
+	    "file" : "transport_data.dat",                   // File containing the data
+	    "header" : "C25   N2    Ionization    15.60 eV", // Header line preceding data
+	    "E/N column" : 0,                                // Optional specification of column containing E/N (defaults to 0)
+	    "rate/N column" : 1,                             // Optional specification of column containing alpha/N (defaults to 1)
+	    "min E/N" : 1.0,                                 // Optional truncation of minium E/N kept when resampling the table (occurs after scaling)
+	    "max E/N" : 1000.0,                              // Optional truncation of maximum E/N kept when resampling the table (happens after scaling)
+	    "num points" : 1000,                             // Optional number of points kept when resamplnig the table (defaults to 1000)
+	    "spacing" : "exponential",                       // Optional spcification of table representation. Defaults to 'exponential' but can also be 'linear'
+	    "scale E/N" : 1.0,                               // Optional scaling of the column containing E/N
+	    "scale rate/N" : 1.0,                            // Optional scaling of the column containing rate/E
+	    "plot": true,                                    // Optional. If true, the reaction rate will be plotted.
+	    "efficiency": 0.06,                              // Reaction efficiency, assuming the number of photoionization events per ionization event
+	    "quenching pressure": 4000.0                     // Pressure quenching for collisional de-excitation (plus predissociation) of excited N2.
+	},
+	{
+	    // Excitation of nitrogen to first positive system. 
+	    "reaction": "e + N2 -> e + 1PN2",
+	    "description": "Rate/1PN2 excitation 7.35eV",
+	    "type": "table vs E/N",
+	    "file" : "transport_data.dat",
+	    "header": "C14   N2    Excitation    7.35 eV",
+	    "E/N column": 0,
+	    "rate/N column": 1,	  
+	    "min E/N": 1,
+	    "max E/N": 2E6,
+	    "spacing": "exponential",     
+	    "num points": 1000,	 
+	    "plot": true
+	}	
+
+    ],
+    "photoionization":
+    [
+	// List of photoionizing reactions. These must contain a reaction string (and possibly also an efficiency).
+	{
+	    "reaction": "Y + (O2) -> e + O2+"
+	}
+    ],
+    "electrode emission":
+    [
+    	{
+    	    "reaction": "N2+ -> @",
+    	    "@": ["e", "(null)"],
+    	    "efficiencies": [0.001, 0.999]
+    	},
+    	{
+    	    "reaction": "O2+ -> @",
+    	    "@": ["e", "(null)"],
+    	    "efficiencies": [0.001, 0.999]
+    	}
+    ],
+    "dielectric emission":
+    [
+    	{
+    	    "reaction": "N2+ -> @",
+    	    "@": ["e", "(null)"],
+    	    "efficiencies": [0.001, 0.999]
+    	},
+    	{
+    	    "reaction": "O2+ -> @",
+    	    "@": ["e", "(null)"],
+    	    "efficiencies": [0.001, 0.999]
+    	}
+    ]    
+}

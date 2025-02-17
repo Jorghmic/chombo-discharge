@@ -11,9 +11,8 @@ $(ebaseobject): dependencies
 # Build dependencies if they do not exis. 
 dependencies: 
 	$(MAKE) --directory=$(DISCHARGE_HOME) discharge-lib
-	$(MAKE) --directory=$(DISCHARGE_HOME) cdrplasma
+	$(MAKE) --directory=$(DISCHARGE_HOME) dischargeinception
 
 # Make advection-diffusion headers and library visible. 
-XTRACPPFLAGS += $(CDRPLASMA_INCLUDE) -I$(DISCHARGE_HOME)/Submodules/json/include
-XTRALIBFLAGS += $(addprefix -l, $(CDRPLASMA_LIB))$(config)
-
+XTRACPPFLAGS += $(DISCHARGEINCEPTION_INCLUDE)
+XTRALIBFLAGS += $(addprefix -l, $(DISCHARGEINCEPTION_LIB))$(config)
