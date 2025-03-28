@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --account=nn9887k
-#SBATCH --job-name=TriplePointItoKMC2
-#SBATCH --time=0-06:00:00
+#SBATCH --account=nn9636k
+#SBATCH --job-name=TriplePointItoKMC5
+#SBATCH --time=0-12:00:00
 #SBATCH --nodes=20
 #SBATCH --ntasks-per-node=128
 
@@ -11,11 +11,11 @@ set -o nounset
 
 ## Software modules
 module restore system
-module load foss/2021a
-module load HDF5/1.10.7-gompi-2021a
+module load foss/2022a
+module load HDF5/1.12.2-gompi-2022a
 
 # Program to run and input script
-executable=program3d.Linux.64.mpic++.gfortran.OPTHIGH.MPI.ex
+executable=program2d.Linux.64.mpic++.gfortran.OPTHIGH.MPI.ex
 
 # Input files. Must be copied to where we run the simulation. 
 input_file=simulation.inputs
@@ -44,4 +44,4 @@ lfs setstripe --stripe-count 8 --stripe-size 64M $workdir
 # Navigate to directory and run
 cd $workdir
 
-mpirun ./$executable $input_file Driver.restart=3000 Driver.initial_regrids=1
+mpirun ./$executable $input_file Driver.initial_regrids=1
