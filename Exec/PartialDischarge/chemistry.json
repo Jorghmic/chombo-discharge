@@ -24,17 +24,35 @@
 	    "my_ideal_gas" : {
 		"type" : "ideal",
 		"temperature" : 300,
-		"pressure" : 1.0
+		"pressure" : 1E5 // Must be given in Pa
 	    }
 	}
     },
     "alpha": {
-	"type": "auto",
-	"species": "e"
+       "type" : "table vs E/N",                                   // Specify that we read in alpha/N vs E/N
+       "file" : "transport_data.dat",                                 // File containing the data
+       "header" : "E/N (Td)\tTownsend ioniz. coef. alpha/N (m2)", // Optional argument. Contains line immediately preceding the data to be read.
+       "E/N column" : 0,                                          // Optional specification of column containing E/N (defaults to 0)
+       "alpha/N column" : 1,                                      // Optional specification of column containing alpha/N (defaults to 1)
+       "min E/N" : 1.0,                                           // Optional truncation of minium E/N kept when resampling the table (occurs after scaling)
+       "max E/N" : 2E6,                                        // Optional truncation of maximum E/N kept when resampling the table (happens after scaling)
+       "num points" : 1000,                                       // Optional number of points kept when resamplnig the table (defaults to 1000)
+       "spacing" : "exponential",                                 // Optional spcification of table representation. Defaults to 'exponential' but can also be 'linear'
+       "scale E/N" : 1.0,                                         // Optional scaling of the column containing E/N
+       "scale alpha/N" : 1.0                                      // Optional scaling
     },
     "eta": {
-	"type": "auto",
-	"species": "e"
+       "type" : "table vs E/N",                                   // Specify that we read in alpha/N vs E/N
+       "file" : "transport_data.dat",                                 // File containing the data
+       "header" : "E/N (Td)\tTownsend attach. coef. eta/N (m2)", // Optional argument. Contains line immediately preceding the data to be read.
+       "E/N column" : 0,                                          // Optional specification of column containing E/N (defaults to 0)
+       "alpha/N column" : 1,                                      // Optional specification of column containing alpha/N (defaults to 1)
+       "min E/N" : 1.0,                                           // Optional truncation of minium E/N kept when resampling the table (occurs after scaling)
+       "max E/N" : 2E6,                                        // Optional truncation of maximum E/N kept when resampling the table (happens after scaling)
+       "num points" : 1000,                                       // Optional number of points kept when resamplnig the table (defaults to 1000)
+       "spacing" : "exponential",                                 // Optional spcification of table representation. Defaults to 'exponential' but can also be 'linear'
+       "scale E/N" : 1.0,                                         // Optional scaling of the column containing E/N
+       "scale alpha/N" : 1.0                                      // Optional scaling
     },    
     "plasma species" :
     [
@@ -90,16 +108,49 @@
 	    },
 	    "initial particles" : [
 		{
-		    "list" : {
-			"file": "initial_particles.txt",
-			"x column": 0,
-			"y column": 1,
-			"z column": 2,
-			"w column": 3
-		    }
+		    "sphere distribution" : {       // Particles inside sphere
+			"center" : [ 17.5E-3, 9.9E-3 ], // Sphere center
+			"radius" : 100E-6,             // Sphere radius
+			"num particles": 1000,       // Number of computational particles
+			"weight" : 1                 // Particle weights
+		    }		    
 		}
 	    ]
         },
+	{
+            "id": "e_low",          // Species ID
+	    "Z" : -1,           // Charge number
+	    "solver" : "ito",   // Solver type. Either 'ito' or 'cdr'
+	    "mobile" : true,    // Mobile or not
+	    "diffusive" : true, // Diffusive or not
+	    "mobility" : {
+		// Specification of the mobilility coefficient when the species is mobile. User can specify various forms of the mobility. E.g. constant, function-based, or
+		// tabulated vs E/N
+		"type" : "table vs E/N",                      // Specification of tabulated mobility lookup method
+		"file" : "transport_data.dat",                    // File containg the mobility data
+		"header" : "E/N (Td)\tMobility *N (1/m/V/s)", // Line immediately preceding the colum data
+		"E/N" : 0,                                    // Column containing E/N
+		"mu*N" : 1,                                   // Column containing mu*N
+		"min E/N" : 1,                                // Minimum E/N kept when resampling table
+		"max E/N" : 2E6,                              // Maximum E/N kept when resampling table
+		"points" : 1000,                              // Number of grid points kept when resampling the table
+		"spacing" : "exponential",                    // Grid point spacing when resampling the table
+		"E/N scale" : 1.0,                            // Optional argument for scaling mobility coefficient
+		"mu*N scale" : 0.1                            // Optional argument for scaling the E/N column
+	    },
+	    "diffusion" : {
+		// Definition of the diffusion coefficient similiar to mobility coefficient above.
+		"type" : "table vs E/N",
+		"file" : "transport_data.dat",
+		"header" : "E/N (Td)\tDiffusion coefficient *N (1/m/s)",
+		"E/N" : 0,
+		"D*N" : 1,
+		"min E/N" : 10,
+		"max E/N" : 2E6,
+		"spacing" : "exponential",
+		"points" : 1000
+	    }
+        },	
 	{
 	    // Definition of O2+ plasma species.
             "id": "O2+",            // Species ID
@@ -175,10 +226,26 @@
     ],
     "plasma reactions":
     [
-	// List of plasma reactions. 
+	// List of plasma reactions.
+	{
+	    // Electron thermalization
+	    "reaction": "e_low -> e", 
+	    "description": "Rate/Thermalization",
+	    "type": "table vs E/N",              
+	    "file" : "relax_rate.txt",           
+	    "header" : "# x y type", 
+	    "E/N column" : 0,        
+	    "rate/N column" : 1,     
+	    "min E/N" : 1.0,         
+	    "max E/N" : 1000.0,      
+	    "num points" : 1000,     
+	    "spacing" : "exponential",
+	    "scale E/N" : 1.0,        
+	    "scale rate/N" : 1.0
+	},			
 	{
 	    // Tabulated reaction rate for e + N2 -> e + e + N2+
-	    "reaction": "e + N2 -> e + e + N2+",             // Reaction. Must contain the '->'
+	    "reaction": "e + N2 -> e_low + e_low + N2+",             // Reaction. Must contain the '->'
 	    "description": "Rate/N2 ionization",             // Optional description of the reaction. Used when plotting the rate
 	    "type": "table vs E/N",                          // Specification of reaction rate type
 	    "file" : "transport_data.dat",                   // File containing the data
@@ -195,7 +262,7 @@
 	},
 	{
 	    // Tabulated reaction rate for e + O2 -> e + e + O2+	    
-	    "reaction": "e + O2 -> e + e + O2+",             // Reaction. Must contain the '->'
+	    "reaction": "e + O2 -> e_low + e_low + O2+",             // Reaction. Must contain the '->'
 	    "description": "Rate/O2 ionization",             // Optional description of the reaction. Used when plotting the rate
 	    "type": "table vs E/N",                          // Specification of reaction rate type
 	    "file" : "transport_data.dat",                   // File containing the data
@@ -229,7 +296,7 @@
 	},
 	{
 	    // Tabulated reaction rate for e + N2 -> e + Y + N2
-	    "reaction": "e + N2 -> e + Y + (N2)",            // Reaction. Must contain the '->'
+	    "reaction": "e + N2 -> e_low + Y + (N2)",            // Reaction. Must contain the '->'
 	    "description": "Rate/Photon generation",         // Optional description of the reaction. Used when plotting the rate
 	    "type": "table vs E/N",                          // Specification of reaction rate type
 	    "file" : "transport_data.dat",                   // File containing the data
@@ -267,19 +334,19 @@
     [
 	// List of photoionizing reactions. These must contain a reaction string (and possibly also an efficiency).
 	{
-	    "reaction": "Y + (O2) -> e + O2+"
+	    "reaction": "Y + (O2) -> e_low + O2+"
 	}
     ],
     "electrode emission":
     [
     	{
     	    "reaction": "N2+ -> @",
-    	    "@": ["e", "(null)"],
+    	    "@": ["e_low", "(null)"],
     	    "efficiencies": [0.001, 0.999]
     	},
     	{
     	    "reaction": "O2+ -> @",
-    	    "@": ["e", "(null)"],
+    	    "@": ["e_low", "(null)"],
     	    "efficiencies": [0.001, 0.999]
     	}
     ],
@@ -287,12 +354,12 @@
     [
     	{
     	    "reaction": "N2+ -> @",
-    	    "@": ["e", "(null)"],
+    	    "@": ["e_low", "(null)"],
     	    "efficiencies": [0.001, 0.999]
     	},
     	{
     	    "reaction": "O2+ -> @",
-    	    "@": ["e", "(null)"],
+    	    "@": ["e_low", "(null)"],
     	    "efficiencies": [0.001, 0.999]
     	}
     ]    
