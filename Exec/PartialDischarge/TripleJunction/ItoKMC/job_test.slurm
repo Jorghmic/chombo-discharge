@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --account=nn9636k
-#SBATCH --job-name=TriplePointItoKMC8
+#SBATCH --job-name=TriplePointItoKMC9
 #SBATCH --time=0-1:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=128
@@ -21,7 +21,7 @@ module load HDF5/1.14.0-gompi-2023a
 executable=program2d.Linux.64.mpic++.gfortran.OPTHIGH.MPI.ex
 
 # Input files. Must be copied to where we run the simulation. 
-input_file=simulation.inputs
+input_file=sim_test.inputs
 transport_file=transport_data.dat
 chemistry_file=chemistry.json
 particle_file=initial_particles.txt

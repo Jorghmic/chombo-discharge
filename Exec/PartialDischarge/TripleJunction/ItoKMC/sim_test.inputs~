@@ -1,7 +1,7 @@
 # ====================================================================================================
 # Voltage curve
 # ====================================================================================================
-ItoKMC.potential = 31E3
+ItoKMC.potential = 34E3
 ItoKMC.basename  = pout
 
 # ====================================================================================================
@@ -54,12 +54,12 @@ Driver.geometry_only                   = false            # Special option that 
 Driver.write_memory                    = false            # Write MPI memory report
 Driver.write_loads                     = false            # Write (accumulated) computational loads
 Driver.output_directory                = ./               # Output directory
-Driver.output_names                    = simulation31       # Simulation output names
+Driver.output_names                    = simulation34       # Simulation output names
 Driver.max_plot_depth                  = -1               # Restrict maximum plot depth (-1 => finest simulation level)
 Driver.max_chk_depth                   = -1               # Restrict chechkpoint depth (-1 => finest simulation level)	
 Driver.num_plot_ghost                  = 1                # Number of ghost cells to include in plots
 Driver.plt_vars                        = levelset         # 'tags', 'mpi_rank', 'levelset', 'loads'
-Driver.restart                         = 14500                # Restart step (less or equal to 0 implies fresh simulation)
+Driver.restart                         = 0                # Restart step (less or equal to 0 implies fresh simulation)
 Driver.allow_coarsening                = true             # Allows removal of grid levels according to CellTagger
 Driver.grow_geo_tags                   = 2                # How much to grow tags when using geometry-based refinement. 
 Driver.refine_angles                   = 15.              # Refine cells if angle between elements exceed this value.

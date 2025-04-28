@@ -35,11 +35,11 @@ if [ ! -d $workdir ]; then mkdir -p $workdir; fi
 export CH_OUTPUT_INTERVAL=9999999
 
 # Copy executables to work directory
+cp -f $executable $workdir/$ex
 cp -f $executable $workdir/$executable
 cp -f $input_file $workdir/$input_file
 cp -f $transport_file $workdir/$transport_file
 cp -f $chemistry_file $workdir/$chemistry_file
-cp -f $relax_rate $workdir/$relax_rate
 cp -f -L $particle_file $workdir/$particle_file
 
 
