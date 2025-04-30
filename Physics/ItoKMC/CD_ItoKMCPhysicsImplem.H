@@ -20,6 +20,7 @@
 #include <CD_ParticleManagement.H>
 #include <CD_Random.H>
 #include <CD_Units.H>
+#include <CD_DataOps.H>
 #include <CD_NamespaceHeader.H>
 
 using namespace Physics::ItoKMC;
@@ -33,28 +34,21 @@ inline ItoKMCPhysics::ItoKMCPhysics() noexcept
   m_kmcReactions.clear();
   m_photoReactions.clear();
 
-  // Some default settings in case user forgets to call the parsing algorithms.
+  // Some default settings (mostly in case user forgets to call the parsing algorithms).
   m_isDefined         = false;
   m_debug             = true;
   m_hasKMCSolver      = false;
+  m_downstreamSpecies = -1;
   m_maxNewParticles   = 32;
   m_maxNewPhotons     = 32;
   m_Ncrit             = 5;
-  m_eps               = 0.1;
-  m_NSSA              = 10;
+  m_eps               = 2.0;
+  m_NSSA              = 5;
+  m_maxIter           = 10;
   m_SSAlim            = 5.0;
-  m_algorithm         = Algorithm::TauPlain;
+  m_exitTol           = 1.E-6;
+  m_algorithm         = Algorithm::ExplicitEuler;
   m_particlePlacement = ParticlePlacement::Random;
-
-  // Development code for switching to centroid for secondary emission. Will be removed.
-#if 0
-  bool      useCentroid = false;
-  ParmParse pp("ItoKMCPhysics");
-  pp.query("use_centroid", useCentroid);
-  if (useCentroid) {
-    m_particlePlacement = ParticlePlacement::Centroid;
-  }
-#endif
 }
 
 inline ItoKMCPhysics::~ItoKMCPhysics() noexcept
@@ -124,7 +118,7 @@ ItoKMCPhysics::defineKMC() const noexcept
   }
 
   m_kmcSolver.define(m_kmcReactionsThreadLocal);
-  m_kmcSolver.setSolverParameters(m_Ncrit, m_NSSA, m_eps, m_SSAlim);
+  m_kmcSolver.setSolverParameters(m_Ncrit, m_NSSA, m_maxIter, m_eps, m_SSAlim, m_exitTol);
   m_kmcState.define(m_itoSpecies.size() + m_cdrSpecies.size(), m_rtSpecies.size());
 
   m_hasKMCSolver = true;
@@ -205,16 +199,6 @@ ItoKMCPhysics::getSpeciesMap() const noexcept
   return m_speciesMap;
 }
 
-inline Real
-ItoKMCPhysics::computeDt(const RealVect a_E, const RealVect a_pos, const Vector<FPR> a_numParticles) const noexcept
-{
-  CH_TIME("ItoKMCPhysics::computeDt");
-
-  CH_assert(m_isDefined);
-
-  return std::numeric_limits<Real>::max();
-}
-
 inline void
 ItoKMCPhysics::parseRuntimeOptions() noexcept
 {
@@ -256,31 +240,39 @@ ItoKMCPhysics::parseAlgorithm() noexcept
   std::string str;
 
   pp.get("algorithm", str);
-  pp.get("Ncrit", m_Ncrit);
-  pp.get("NSSA", m_NSSA);
+  pp.get("crit_num", m_Ncrit);
+  pp.get("SSA_num", m_NSSA);
   pp.get("prop_eps", m_eps);
-  pp.get("SSAlim", m_SSAlim);
+  pp.get("SSA_lim", m_SSAlim);
+  pp.get("max_iter", m_maxIter);
+  pp.get("exit_tolerance", m_exitTol);
 
   if (str == "ssa") {
     m_algorithm = Algorithm::SSA;
   }
-  else if (str == "tau_plain") {
-    m_algorithm = Algorithm::TauPlain;
+  else if (str == "explicit_euler") {
+    m_algorithm = Algorithm::ExplicitEuler;
   }
-  else if (str == "tau_midpoint") {
-    m_algorithm = Algorithm::TauMidpoint;
+  else if (str == "midpoint") {
+    m_algorithm = Algorithm::Midpoint;
   }
-  else if (str == "tau_prc") {
-    m_algorithm = Algorithm::TauPRC;
+  else if (str == "prc") {
+    m_algorithm = Algorithm::PRC;
   }
-  else if (str == "hybrid_plain") {
-    m_algorithm = Algorithm::HybridPlain;
+  else if (str == "implicit_euler") {
+    m_algorithm = Algorithm::ImplicitEuler;
+  }
+  else if (str == "hybrid_explicit_euler") {
+    m_algorithm = Algorithm::HybridExplicitEuler;
   }
   else if (str == "hybrid_midpoint") {
     m_algorithm = Algorithm::HybridMidpoint;
   }
   else if (str == "hybrid_prc") {
     m_algorithm = Algorithm::HybridPRC;
+  }
+  else if (str == "hybrid_implicit_euler") {
+    m_algorithm = Algorithm::HybridImplicitEuler;
   }
   else {
     MayDay::Error("ItoKMCPhysics::parseAlgorithm - unknown algorithm requested");
@@ -338,6 +330,8 @@ ItoKMCPhysics::initialSigma(const Real a_time, const RealVect a_pos) const
 inline void
 ItoKMCPhysics::advanceKMC(Vector<FPR>&            a_numParticles,
                           Vector<FPR>&            a_numNewPhotons,
+                          Real&                   a_criticalDt,
+                          Real&                   a_nonCriticalDt,
                           const Vector<Real>&     a_phi,
                           const Vector<RealVect>& a_gradPhi,
                           const Real              a_dt,
@@ -364,6 +358,43 @@ ItoKMCPhysics::advanceKMC(Vector<FPR>&            a_numParticles,
     p = 0LL;
   }
 
+  // Lambda function used for computing charge before and after reactions. Used only in debug mode
+  // for ensuring that nothing goes wrong with charge conservation in the chemistry integration.
+  auto computeCharge = [&]() -> long long {
+    long long Q = 0.0;
+    for (int i = 0; i < kmcParticles.size(); i++) {
+      const SpeciesType& speciesType  = m_speciesMap.at(i).first;
+      const int&         speciesIndex = m_speciesMap.at(i).second;
+
+      int Z = 0;
+
+      switch (speciesType) {
+      case SpeciesType::Ito: {
+        Z = m_itoSpecies[speciesIndex]->getChargeNumber();
+
+        break;
+      }
+      case SpeciesType::CDR: {
+        Z = m_cdrSpecies[speciesIndex]->getChargeNumber();
+
+        break;
+      }
+      default: {
+        MayDay::Abort("ItoKMCPhysics::advanceKMC -- logic bust in computeCharge()");
+
+        break;
+      }
+      }
+
+      Q += llround(kmcParticles[i]) * Z;
+    }
+
+    return Q;
+  };
+
+  // In debug mode, compute the total charge.
+  const long long chargeBefore = m_debug ? computeCharge() : 0LL;
+
   // Update the reaction rates to be used by the KMC solver.
   this->updateReactionRates(m_kmcReactionsThreadLocal, a_E, a_pos, a_phi, a_gradPhi, a_dx, a_kappa);
 
@@ -374,33 +405,43 @@ ItoKMCPhysics::advanceKMC(Vector<FPR>&            a_numParticles,
 
     break;
   }
-  case Algorithm::TauPlain: {
-    m_kmcSolver.advanceTauPlain(m_kmcState, a_dt);
+  case Algorithm::ExplicitEuler: {
+    m_kmcSolver.advanceTau(m_kmcState, a_dt, KMCLeapPropagator::ExplicitEuler);
 
     break;
   }
-  case Algorithm::TauMidpoint: {
-    m_kmcSolver.advanceTauMidpoint(m_kmcState, a_dt);
+  case Algorithm::Midpoint: {
+    m_kmcSolver.advanceTau(m_kmcState, a_dt, KMCLeapPropagator::Midpoint);
 
     break;
   }
-  case Algorithm::TauPRC: {
-    m_kmcSolver.advanceTauPRC(m_kmcState, a_dt);
+  case Algorithm::PRC: {
+    m_kmcSolver.advanceTau(m_kmcState, a_dt, KMCLeapPropagator::PRC);
 
     break;
   }
-  case Algorithm::HybridPlain: {
-    m_kmcSolver.advanceHybrid(m_kmcState, a_dt, KMCLeapPropagator::TauPlain);
+  case Algorithm::ImplicitEuler: {
+    m_kmcSolver.advanceTau(m_kmcState, a_dt, KMCLeapPropagator::ImplicitEuler);
+
+    break;
+  }
+  case Algorithm::HybridExplicitEuler: {
+    m_kmcSolver.advanceHybrid(m_kmcState, a_dt, KMCLeapPropagator::ExplicitEuler);
 
     break;
   }
   case Algorithm::HybridMidpoint: {
-    m_kmcSolver.advanceHybrid(m_kmcState, a_dt, KMCLeapPropagator::TauMidpoint);
+    m_kmcSolver.advanceHybrid(m_kmcState, a_dt, KMCLeapPropagator::Midpoint);
 
     break;
   }
   case Algorithm::HybridPRC: {
-    m_kmcSolver.advanceHybrid(m_kmcState, a_dt, KMCLeapPropagator::TauPRC);
+    m_kmcSolver.advanceHybrid(m_kmcState, a_dt, KMCLeapPropagator::PRC);
+
+    break;
+  }
+  case Algorithm::HybridImplicitEuler: {
+    m_kmcSolver.advanceHybrid(m_kmcState, a_dt, KMCLeapPropagator::ImplicitEuler);
 
     break;
   }
@@ -416,12 +457,31 @@ ItoKMCPhysics::advanceKMC(Vector<FPR>&            a_numParticles,
   for (size_t i = 0; i < a_numNewPhotons.size(); i++) {
     a_numNewPhotons[i] = (FPR)kmcPhotons[i];
   }
+
+  const long long chargeAfter = m_debug ? computeCharge() : 0LL;
+
+  if (chargeAfter != chargeBefore) {
+    MayDay::Warning("ItoKMCPhysics::advanceKMC -- charge not conserved!");
+  }
+
+  // Compute the critical and non-critical time steps
+  const auto partitionedReactions = m_kmcSolver.partitionReactions(m_kmcState);
+
+  const auto& criticalReactions    = partitionedReactions.first;
+  const auto& nonCriticalReactions = partitionedReactions.second;
+
+  const auto criticalPropensities    = m_kmcSolver.propensities(m_kmcState, criticalReactions);
+  const auto nonCriticalPropensities = m_kmcSolver.propensities(m_kmcState, nonCriticalReactions);
+
+  a_criticalDt    = m_kmcSolver.getCriticalTimeStep(criticalPropensities);
+  a_nonCriticalDt = m_kmcSolver.getNonCriticalTimeStep(m_kmcState, nonCriticalReactions, nonCriticalPropensities);
 }
 
 inline void
 ItoKMCPhysics::reconcileParticles(Vector<List<ItoParticle>*>& a_particles,
                                   const Vector<FPR>&          a_newNumParticles,
                                   const Vector<FPR>&          a_oldNumParticles,
+                                  const RealVect              a_electricField,
                                   const RealVect              a_cellPos,
                                   const RealVect              a_centroidPos,
                                   const RealVect              a_lo,
@@ -431,7 +491,9 @@ ItoKMCPhysics::reconcileParticles(Vector<List<ItoParticle>*>& a_particles,
                                   const Real                  a_dx,
                                   const Real                  a_kappa) const noexcept
 {
-  CH_TIME("ItoKMCPhysics::reconcileParticles(Vector<List<ItoParticle>*>, ...)");
+  CH_TIMERS("ItoKMCPhysics::reconcileParticles");
+  CH_TIMER("ItoKMCPhysics::reconcileParticles::compute_downstream", t1);
+  CH_TIMER("ItoKMCPhysics::reconcileParticles::particle_placement", t2);
 
   CH_assert(m_isDefined);
   CH_assert(a_particles.size() == a_newNumParticles.size());
@@ -458,6 +520,35 @@ ItoKMCPhysics::reconcileParticles(Vector<List<ItoParticle>*>& a_particles,
     }
   }
 
+  // Compute the upstream position of the particles (which is usually the electrons).
+  bool     hasDownstream    = false;
+  RealVect upstreamPosition = RealVect::Zero;
+  RealVect upstreamLo       = -0.5 * RealVect::Unit;
+  RealVect upstreamHi       = +0.5 * RealVect::Unit;
+  RealVect v                = RealVect::Zero;
+  int      Z                = 0;
+
+  if (m_particlePlacement == ParticlePlacement::Downstream) {
+    CH_assert(m_downstreamSpecies >= 0);
+
+    Z = m_itoSpecies[m_downstreamSpecies]->getChargeNumber();
+
+    if (Z != 0) {
+      v = Z * a_electricField;
+      v = v / v.vectorLength();
+    }
+
+    hasDownstream = this->computeUpstreamPosition(upstreamPosition,
+                                                  upstreamLo,
+                                                  upstreamHi,
+                                                  Z,
+                                                  *a_particles[m_downstreamSpecies],
+                                                  a_electricField,
+                                                  a_cellPos,
+                                                  a_dx);
+  }
+
+  CH_START(t2);
   for (int i = 0; i < a_particles.size(); i++) {
     const long long diff = (long long)(a_newNumParticles[i] - a_oldNumParticles[i]);
 
@@ -472,13 +563,30 @@ ItoKMCPhysics::reconcileParticles(Vector<List<ItoParticle>*>& a_particles,
 
         // Figure out where to place the particles.
         switch (m_particlePlacement) {
+        case ParticlePlacement::Centroid: {
+          x = a_cellPos + a_centroidPos * a_dx;
+
+          break;
+        }
         case ParticlePlacement::Random: {
           x = Random::randomPosition(a_cellPos, a_lo, a_hi, a_bndryCentroid, a_bndryNormal, a_dx, a_kappa);
 
           break;
         }
-        case ParticlePlacement::Centroid: {
-          x = a_cellPos + a_centroidPos * a_dx;
+        case ParticlePlacement::Downstream: {
+          if (hasDownstream) {
+            x = Random::randomPosition(upstreamLo, upstreamHi, upstreamPosition, v);
+
+            if ((x - a_bndryCentroid).dotProduct(a_bndryNormal) < 0.0) {
+              x = upstreamPosition;
+            }
+
+            x = a_cellPos + x * a_dx;
+          }
+          else {
+
+            x = Random::randomPosition(a_cellPos, a_lo, a_hi, a_bndryCentroid, a_bndryNormal, a_dx, a_kappa);
+          }
 
           break;
         }
@@ -497,6 +605,65 @@ ItoKMCPhysics::reconcileParticles(Vector<List<ItoParticle>*>& a_particles,
       this->removeParticles(*a_particles[i], -diff);
     }
   }
+  CH_STOP(t2);
+}
+
+inline bool
+ItoKMCPhysics::computeUpstreamPosition(RealVect&                a_pos,
+                                       RealVect&                a_lo,
+                                       RealVect&                a_hi,
+                                       const int&               a_Z,
+                                       const List<ItoParticle>& a_particles,
+                                       const RealVect&          a_electricField,
+                                       const RealVect&          a_cellPos,
+                                       const Real&              a_dx) const noexcept
+{
+  CH_TIME("ItoKMCPhysics::computeUpstreamPosition");
+
+  CH_assert(a_dx > 0.0);
+
+  a_pos = RealVect::Zero;
+  a_lo  = -0.5 * RealVect::Unit;
+  a_hi  = +0.5 * RealVect::Unit;
+
+  // Quick lambda for turning physical position into unit cell position.
+  auto unitCellPosition = [&](const ItoParticle& p) -> RealVect {
+    return (p.position() - a_cellPos) / a_dx;
+  };
+
+  const int      Z = (a_Z > 0) ? 1 : (a_Z < 0) ? -1 : 0;
+  const RealVect E = a_electricField / a_electricField.vectorLength();
+  const RealVect v = Z * E;
+
+  // Upstream can only exist if there is a velocity direction and there are particles.
+  const bool hasDownstream = (a_particles.length() > 0) && (v.vectorLength() > 0.0);
+
+  if (hasDownstream) {
+
+    Real D = std::numeric_limits<Real>::max();
+
+    for (ListIterator<ItoParticle> lit(a_particles); lit.ok(); ++lit) {
+      const RealVect x = unitCellPosition(lit());
+      const Real     d = x.dotProduct(v);
+
+      if (d < D) {
+        D     = d;
+        a_pos = x;
+      }
+    }
+
+    DataOps::computeMinValidBox(a_lo, a_hi, v, a_pos);
+  }
+
+  if (m_debug) {
+    for (int dir = 0; dir < SpaceDim; dir++) {
+      if (a_pos[dir] > 0.5 || a_pos[dir] < -0.5) {
+        MayDay::Abort("ItoKMCPhysics::computeUpstreamPosition - logic bust");
+      }
+    }
+  }
+
+  return hasDownstream;
 }
 
 inline void

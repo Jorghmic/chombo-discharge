@@ -47,6 +47,53 @@ Algorithms
 Time stepping
 -------------
 
+The Îto-KMC model has adaptive time step controls and no fundamental CFL limitation.
+Currently, the time step can be restricted through several means:
+
+#. A physics-based time step, which is proportional to the non-critical time step from the KMC integrator. 
+#. A particle advective, diffusive, or advective-diffusive CFL limitation, both upper and lower bounds.
+#. A CFL-condition on the convection-diffusion-reaction solvers.
+#. A limit that restricts the time step to a factor proportional to the dielectric relaxation time.
+#. Hard limits, placing upper and lower bounds on the time step.
+
+In addition, the user can specify the maximum permitted growth or reduction in the time step.
+
+These limits are given by the following input variables:
+
+.. code-block:: txt
+
+   ItoKMCGodunovStepper.physics_dt_factor                     = 1.0     ## Physics-based time step factor
+   ItoKMCGodunovStepper.min_particle_advection_cfl            = 0.0     ## Advective time step CFL restriction
+   ItoKMCGodunovStepper.max_particle_advection_cfl            = 1.0     ## Advective time step CFL restriction
+   ItoKMCGodunovStepper.min_particle_diffusion_cfl            = 0.0     ## Diffusive time step CFL restriction
+   ItoKMCGodunovStepper.max_particle_diffusion_cfl            = 1.E99   ## Diffusive time step CFL restriction
+   ItoKMCGodunovStepper.min_particle_advection_diffusion_cfl  = 0.0     ## Advection-diffusion time step CFL restriction
+   ItoKMCGodunovStepper.max_particle_advection_diffusion_cfl  = 1.E99   ## Advection-diffusion time step CFL restriction
+   ItoKMCGodunovStepper.fluid_advection_diffusion_cfl         = 0.5     ## Advection-diffusion time step CFL restriction
+   ItoKMCGodunovStepper.relax_dt_factor                       = 100.0   ## Relaxation time step restriction.
+   ItoKMCGodunovStepper.min_dt                                = 0.0     ## Minimum permitted time step
+   ItoKMCGodunovStepper.max_dt                                = 1.E99   ## Maximum permitted time step
+   ItoKMCGodunovStepper.max_growth_dt                         = 1.E99   ## Maximum permitted time step increase (dt * factor)
+   ItoKMCGodunovStepper.max_shrink_dt                         = 1.E99   ## Maximum permissible time step reduction (dt/factor)
+
+
+Particle placement
+------------------
+
+The KMC algorithm resolves the number of particles that are generated or lost within each grid cell, leaving substantial freedom in how one distributes new particles (or remove older ones). We currently support three methods for placing new particles:
+
+#. Place all particles on the cell centroid.
+#. Randomly distribute the new particles within the grid cell.
+#. Compute an upstream position within the grid cell and randomly distribute the particles in the downstream region.
+
+The methods each have their advantages and disadvantages.
+Placing all new particles on the cell centroid has the advantage that there will be no spurious space charge effects arising in the grid cell.
+Randomly distributing the new particles has the advantage that it generates secondary particles more evenly over the reaction region.
+Both these methods (``centroid`` and ``random``) are, however, sources of numerical diffusion since the secondary particles are potentially placed in the wake of the primary particles (which is non-physical).
+The downstream method circumvents this source of numerical diffusion by only placing secondary particles in the downstream region of some user-defined species (typically the electrons).
+See :ref:`Chap:ItoKMCJSON` for instructions on how to assign the particle placement method.
+
+
 Spatial filtering
 _________________
 
@@ -70,7 +117,9 @@ Users can apply this filtering by adjusting the following input options:
 
    Spatial filtering of the space-charge density is a work-in-progress which may yield unexpected results.
    Bugs may or may not be present. 
-   Users should exercise caution when using this feature. 
+   Users should exercise caution when using this feature.
+
+
 
 Reaction network
 ----------------
@@ -1816,8 +1865,34 @@ The following options are supported:
 Setting ``ItoKMCJSON.print_rates`` to true in the input file will write all reaction rates as column data :math:`E/N, k(E/N)`.
 Here, :math:`k` indicates the *fluid rate*, so for a reaction :math:`A + B + C \xrightarrow{k}\ldots` it will include the rate :math:`k`.
 Reactions are ordered identical to the order of the reactions in the JSON specification.
-This feature is mostly used for debugging or development efforts. 
+This feature is mostly used for debugging or development efforts.
 
+Particle placement
+------------------
+
+Specification of secondary particle placement is done through the JSON file by specifying the ``particle placement`` field.
+Currently, new particles may be placed on the centroid, uniformly distributed in the grid cell, or placed randomly in the downstream region of some user-defined species.
+The method is specified through the ``method`` specifier, which must either be ``centroid``, ``random``, or ``downstream``.
+If specifying ``downstream``, one must also include a species specifier (which must correspond to one of the plasma species).
+The following three specifies are all valid:
+
+.. code-block:: json
+		
+    "particle placement":
+    {
+       "method": "centroid"
+    }
+
+    "particle placement":
+    {
+       "method": "random"
+    }
+
+    "particle placement":
+    {
+       "method": "downstream",
+       "species": "e"
+    }        
 
 Photoionization
 ---------------
@@ -1970,7 +2045,7 @@ For example, some care might be required when using the Townsend attachment coef
 
 .. warning::
 
-   The JSON interface *does not guard* against inconsitencies in the user-provided chemistry, and provision of inconsistent :math:`\eta/N` and attachment reaction rates are quite possible.       
+   The JSON interface *does not guard* against inconsitencies in the user-provided chemistry, and provision of inconsistent :math:`\eta/N` and attachment reaction rates are quite possible. 
       
 Example programs
 ================

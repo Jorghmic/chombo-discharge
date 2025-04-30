@@ -27,8 +27,8 @@ AmrMesh.eb_ghost         = 2           # Set number of of ghost cells for EB stu
 AmrMesh.mg_interp_order  = 2           # Multigrid interpolation order
 AmrMesh.mg_interp_radius = 2           # Multigrid interpolation radius
 AmrMesh.mg_interp_weight = 2           # Multigrid interpolation weight (for least squares)
-AmrMesh.centroid_sten    = linear      # Centroid interp stencils. 'pwl', 'linear', 'taylor, 'lsq'
-AmrMesh.eb_sten          = pwl         # EB interp stencils. 'pwl', 'linear', 'taylor, 'lsq'
+AmrMesh.centroid_interp  = minmod	     ## Centroid interp stencils. linear, lsq, minmod, etc
+AmrMesh.eb_interp        = minmod            ## EB interp stencils. linear, taylor, minmod, etc
 AmrMesh.redist_radius    = 1           # Redistribution radius for hyperbolic conservation laws
 
 
@@ -237,6 +237,7 @@ ItoKMCGodunovStepper.box_sorting                           = morton         # Bo
 ItoKMCGodunovStepper.particles_per_cell                    = 64             # Max computational particles per cell
 ItoKMCGodunovStepper.merge_interval                        = 1             # Time steps between superparticle merging
 ItoKMCGodunovStepper.regrid_superparticles                 = false          # Make superparticles during regrids
+ItoKMCGodunovStepper.physics_dt_factor                     = 1.E99                 ## Physics-based time step factor
 ItoKMCGodunovStepper.min_particle_advection_cfl            = 0.0            # Advective time step CFL restriction
 ItoKMCGodunovStepper.max_particle_advection_cfl            = 10.0           # Advective time step CFL restriction
 ItoKMCGodunovStepper.min_particle_diffusion_cfl            = 0.0            # Diffusive time step CFL restriction
@@ -264,17 +265,16 @@ ItoKMCJSON.verbose            = false                   ## Turn on/off verbosity
 ItoKMCJSON.debug              = true                    ## Turn on/off debugging
 ItoKMCJSON.chemistry_file     = simple_air_chemistry.json ## Chemistry file
 
-# For controlling the time step
-ItoKMCJSON.dX                 = 2.0                     ## Maximum relative change Xnew/Xold during one time step.
-
 # Kinetic Monte Carlo solver settings. 
 ItoKMCJSON.max_new_particles  = 64                      ## Maximum number of computational particles to produce in reaction step
 ItoKMCJSON.max_new_photons    = 64                      ## Maximum number of computational photons to produce in reaction step	
-ItoKMCJSON.Ncrit              = 5                       ## How many firings away from a Negative particle number?
+ItoKMCJSON.crit_num           = 5                       ## How many firings away from a Negative particle number?
 ItoKMCJSON.prop_eps           = 1.E99                   ## Maximum relative change in propensity function
-ItoKMCJSON.NSSA               = 10                      ## How many SSA steps to run when tau-leaping is inefficient
-ItoKMCJSON.SSAlim             = 1.0                     ## When to enter SSA instead of tau-leaping
-ItoKMCJSON.algorithm          = tau_plain         ## 'ssa', 'tau_plain', 'tau_midpoint', 'hybrid_plain', or 'hybrid_midpoint'
+ItoKMCJSON.SSA_num            = 10                      ## How many SSA steps to run when tau-leaping is inefficient
+ItoKMCJSON.SSA_lim            = 1.0                     ## When to enter SSA instead of tau-leaping
+ItoKMCJSON.max_iter           = 50              ## Maximum number of iterations for implicit algorithms
+ItoKMCJSON.exit_tolerance     = 1.E-6           ## Exit tolerance for implicit algorithms
+ItoKMCJSON.algorithm          = explicit_euler          ## Integration algorithm
 
 # ====================================================================================================
 # ITO_PLASMA_STREAMER_TAGGER CLASS OPTIONS

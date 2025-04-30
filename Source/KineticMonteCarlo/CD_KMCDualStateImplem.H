@@ -19,6 +19,8 @@
 template <typename T>
 KMCDualState<T>::KMCDualState(const size_t a_numReactiveSpecies, const size_t a_numNonReactiveSpecies) noexcept
 {
+  CH_TIME("KMCDualState::KMCDualState");
+
   this->define(a_numReactiveSpecies, a_numNonReactiveSpecies);
 
   CH_assert(m_reactiveState.size() > 0);
@@ -32,6 +34,11 @@ template <typename T>
 inline void
 KMCDualState<T>::define(const size_t a_numReactiveSpecies, const size_t a_numNonReactiveSpecies) noexcept
 {
+  CH_TIME("KMCDualState::define");
+
+  m_numReactiveSpecies    = a_numReactiveSpecies;
+  m_numNonReactiveSpecies = a_numNonReactiveSpecies;
+
   m_reactiveState.resize(a_numReactiveSpecies);
   m_nonReactiveState.resize(a_numNonReactiveSpecies);
 }
@@ -40,6 +47,8 @@ template <typename T>
 inline bool
 KMCDualState<T>::isValidState() const noexcept
 {
+  CH_TIME("KMCDualState::isValidState");
+
   bool isValid = true;
 
   for (const auto& p : m_reactiveState) {
@@ -59,6 +68,31 @@ KMCDualState<T>::isValidState() const noexcept
   }
 
   return isValid;
+}
+
+template <typename T>
+inline std::vector<T>
+KMCDualState<T>::linearOut() const noexcept
+{
+  std::vector<T> out(0);
+
+  out.insert(out.end(), m_reactiveState.begin(), m_reactiveState.end());
+  out.insert(out.end(), m_nonReactiveState.begin(), m_nonReactiveState.end());
+
+  return out;
+}
+
+template <typename T>
+inline void
+KMCDualState<T>::linearIn(const std::vector<T>& a_linearizedState) noexcept
+{
+  for (size_t i = 0; i < m_numReactiveSpecies; i++) {
+    m_reactiveState[i] = a_linearizedState[i];
+  }
+
+  for (size_t i = 0; i < m_numNonReactiveSpecies; i++) {
+    m_nonReactiveState[i] = a_linearizedState[m_numReactiveSpecies + i];
+  }
 }
 
 template <typename T>
