@@ -28,6 +28,10 @@
 	    }
 	}
     },
+    "particle placement": {
+	"method" : "downstream",
+	"species" : "e"
+    },    
     "alpha": {
        "type" : "table vs E/N",                                   // Specify that we read in alpha/N vs E/N
        "file" : "transport_data.dat",                                 // File containing the data
