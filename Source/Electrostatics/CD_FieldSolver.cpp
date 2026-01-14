@@ -306,12 +306,53 @@ FieldSolver::computeEnergy(const MFAMRCellData& a_electricField)
   m_amr->conservativeAverage(EdotD, m_realm);
 
   // This defines a lambda which computes the energy in a specified phase
-  auto phaseEnergy = [&EdotD, &amr = this->m_amr](const phase::which_phase a_phase) -> Real {
+  auto phaseEnergy = [&EdotD, &amr = this->m_amr, this](const phase::which_phase a_phase) -> Real {
     const EBAMRCellData phaseEdotD = amr->alias(a_phase, EdotD);
 
-    const Real energy = DataOps::norm(*phaseEdotD[0], 1);
+    Real energy = 0.0;
 
-    return energy;
+    for (int lvl = 0; lvl <= m_amr->getFinestLevel(); lvl++) {
+      const Real               dx     = m_amr->getDx()[lvl];
+      const RealVect           probLo = m_amr->getProbLo();
+      const DisjointBoxLayout& dbl    = m_amr->getGrids(m_realm)[lvl];
+      const EBISLayout&        ebisl  = m_amr->getEBISLayout(m_realm, a_phase)[lvl];
+      const DataIterator&      dit    = dbl.dataIterator();
+      const Real               dV     = std::pow(dx, SpaceDim);
+
+      const int nbox = dit.size();
+#pragma omp parallel for schedule(runtime)
+      for (int mybox = 0; mybox < nbox; mybox++) {
+        const DataIndex& din     = dit[mybox];
+        const Box        cellBox = dbl[din];
+        const EBISBox&   ebisbox = ebisl[din];
+
+        const EBCellFAB&     data       = (*phaseEdotD[lvl])[din];
+        const FArrayBox&     dataReg    = data.getFArrayBox();
+        const BaseFab<bool>& validCells = (*m_amr->getValidCells(m_realm)[lvl])[din];
+
+        auto regularKernel = [&](const IntVect& iv) -> void {
+          if (validCells(iv) && ebisbox.isRegular(iv)) {
+            energy += dataReg(iv, 0) * dV;
+          }
+        };
+
+        auto irregularKernel = [&](const VolIndex& vof) -> void {
+          const IntVect iv = vof.gridIndex();
+          if (validCells(iv) && ebisbox.isIrregular(iv)) {
+            const Real kappa = ebisbox.volFrac(vof);
+
+            energy += data(vof, 0) * kappa * dV;
+          }
+        };
+
+        VoFIterator& vofit = (*m_amr->getVofIterator(m_realm, a_phase)[lvl])[din];
+
+        BoxLoops::loop(cellBox, regularKernel);
+        BoxLoops::loop(vofit, irregularKernel);
+      }
+    }
+
+    return ParallelOps::sum(energy);
   };
 
   // Contributions from each phase.
@@ -361,6 +402,7 @@ FieldSolver::computeCapacitance()
   this->setVoltage(voltageOne);
 
   // Do a solve without a source term.
+  this->setPermittivities();
   this->solve(phi, source, sigma, true);
   this->computeElectricField(E, phi);
 
@@ -611,20 +653,27 @@ FieldSolver::parsePlotVariables()
     pp.getarr("plt_vars", str, 0, num);
 
     for (int i = 0; i < num; i++) {
-      if (str[i] == "phi")
+      if (str[i] == "phi") {
         m_plotPotential = true;
-      else if (str[i] == "rho")
+      }
+      else if (str[i] == "rho") {
         m_plotRho = true;
-      else if (str[i] == "resid")
+      }
+      else if (str[i] == "resid") {
         m_plotResidue = true;
-      else if (str[i] == "E")
+      }
+      else if (str[i] == "E") {
         m_plotElectricField = true;
-      else if (str[i] == "Esol")
+      }
+      else if (str[i] == "Esol") {
         m_plotElectricFieldSolid = true;
-      else if (str[i] == "sigma")
+      }
+      else if (str[i] == "sigma") {
         m_plotSigma = true;
-      else if (str[i] == "perm")
+      }
+      else if (str[i] == "perm") {
         m_plotPermittivity = true;
+      }
     }
   }
 }
@@ -1405,6 +1454,14 @@ FieldSolver::writeMultifluidData(LevelData<EBCellFAB>&    a_output,
               fabGas(iv, comp) = 0.0;
             }
           }
+          else if (coveredGas && irregSolid) {
+            fabGas(iv, comp) = fabSolid(iv, comp);
+          }
+          else if (irregSolid) {
+            if (a_phase == phase::solid) {
+              fabGas(iv, comp) = fabSolid(iv, comp);
+            }
+          }
         };
 
         if (isSolidRegular) {
@@ -1592,7 +1649,7 @@ FieldSolver::computeLoads(const DisjointBoxLayout& a_dbl, const int a_level)
     loads[intCode] = a_dbl[din].numPts();
   }
 
-  ParallelOps::vectorSum(loads);
+  ParallelOps::sum(loads);
 
   return loads;
 }
@@ -1716,6 +1773,71 @@ FieldSolver::getPermittivityEB()
   }
 
   return m_permittivityEB;
+}
+
+void
+FieldSolver::fillCoveredPotential(MFAMRCellData& a_phi) const noexcept
+{
+  CH_TIME("FieldSolver::fillCoveredPotential");
+  if (m_verbosity > 5) {
+    pout() << "FieldSolver::fillCoveredPotential" << endl;
+  }
+
+  const Vector<Electrode>& electrodes = m_computationalGeometry->getElectrodes();
+
+  EBAMRCellData phiGas = m_amr->alias(phase::gas, a_phi);
+
+  // Lambda which returns the electrode potential at some position.
+  auto potential = [&electrodes, this](const RealVect& pos) -> Real {
+    Real minDist = std::numeric_limits<Real>::infinity();
+    int  closest = -1;
+
+    for (int i = 0; i < electrodes.size(); i++) {
+      const RefCountedPtr<BaseIF> func = electrodes[i].getImplicitFunction();
+
+      const Real curDist = std::abs(func->value(pos));
+
+      if (curDist <= minDist) {
+        minDist = curDist;
+        closest = i;
+      }
+    }
+
+    const bool live     = electrodes[closest].isLive();
+    const Real U        = m_voltage(m_time);
+    const Real fraction = electrodes[closest].getFraction();
+
+    return live ? fraction * U : 0.0;
+  };
+
+  for (int lvl = 0; lvl <= m_amr->getFinestLevel(); lvl++) {
+    const DisjointBoxLayout& dbl    = m_amr->getGrids(m_realm)[lvl];
+    const DataIterator&      dit    = dbl.dataIterator();
+    const EBISLayout&        ebisl  = m_amr->getEBISLayout(m_realm, phase::gas)[lvl];
+    const Real               dx     = m_amr->getDx()[lvl];
+    const RealVect           probLo = m_amr->getProbLo();
+
+    const int nbox = dit.size();
+#pragma omp parallel for schedule(runtime)
+    for (int mybox = 0; mybox < nbox; mybox++) {
+      const DataIndex& din     = dit[mybox];
+      const EBISBox&   ebisbox = ebisl[din];
+      const Box        cellBox = dbl[din];
+
+      EBCellFAB& data    = (*phiGas[lvl])[din];
+      FArrayBox& dataReg = data.getFArrayBox();
+
+      auto regularKernel = [&](const IntVect& iv) -> void {
+        if (ebisbox.isCovered(iv)) {
+          const RealVect pos = probLo + (RealVect(iv) + 0.5 * RealVect::Unit) * dx;
+
+          dataReg(iv, 0) = potential(pos);
+        }
+      };
+
+      BoxLoops::loop(cellBox, regularKernel);
+    }
+  }
 }
 
 #include <CD_NamespaceFooter.H>

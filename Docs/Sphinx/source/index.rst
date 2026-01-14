@@ -99,7 +99,6 @@ Design
    Source/TimeStepper
    Source/AmrMesh   
    Source/CellTagger
-   Source/GeoCoarsener
 
 Discretization
 **************
@@ -114,7 +113,6 @@ Discretization
    Source/MeshData
    Source/Particles
    Source/Realm
-   Source/Regridding   
    Source/LinearSolvers
    Source/VV   
 
@@ -128,12 +126,12 @@ Solvers
 
    Solvers/CDR
    Solvers/Electrostatics
+   Solvers/Ito   
    Solvers/KineticMonteCarlo
    Solvers/MeshODESolver
    Solvers/RTE
    Solvers/SurfaceODESolver
    Solvers/TracerParticles
-   Solvers/Ito
 
 Multi-physics applications
 **************************

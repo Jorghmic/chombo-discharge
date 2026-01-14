@@ -44,6 +44,7 @@ public:
   using Smoother = EBHelmholtzOp::Smoother;
 
   using AmrLevelGrids    = Vector<RefCountedPtr<EBLevelGrid>>;
+  using AmrMask          = Vector<RefCountedPtr<LevelData<BaseFab<bool>>>>;
   using AmrInterpolators = Vector<RefCountedPtr<EBMultigridInterpolator>>;
   using AmrFluxRegisters = Vector<RefCountedPtr<EBReflux>>;
   using AmrCoarseners    = Vector<RefCountedPtr<EBCoarAve>>;
@@ -90,7 +91,8 @@ public:
     @param[in] a_ebbcFactory      Factory class for making BC objects for EB boundary conditions. 
     @param[in] a_ghostPhi         Number of ghost cells in solution vector. 
     @param[in] a_ghostRhs         Number of ghost cells in right-hand side. 
-    @param[in] a_relaxationMethod Relaxation method. 
+    @param[in] a_relaxationMethod Relaxation method.
+    @param[in] a_relaxFactor      Relaxation factor
     @param[in] a_bottomDomain     Coarsest domain on which we run multigrid. Must be a coarsening of the AMR problem domains. 
     @param[in] a_deeperLevelGrids Optional object in case you want to pre-define the deeper multigrid levels. 
     @note a_deeperLevelGrids exists because the default behavior in this factory is to use direct coarsening for deeper AMR levels. 
@@ -103,6 +105,7 @@ public:
                        const Real&             a_beta,
                        const RealVect&         a_probLo,
                        const AmrLevelGrids&    a_amrLevelGrids,
+                       const AmrMask&          a_validCells,
                        const AmrInterpolators& a_amrInterpolators,
                        const AmrFluxRegisters& a_amrFluxRegisters,
                        const AmrCoarseners&    a_amrCoarseners,
@@ -116,6 +119,7 @@ public:
                        const IntVect&          a_ghostPhi,
                        const IntVect&          a_ghostRHS,
                        const Smoother&         a_relaxationMethod,
+                       const Real&             a_relaxFactor,
                        const ProblemDomain&    a_bottomDomain,
                        const int&              a_mgBlockingFactor,
                        const AmrLevelGrids&    a_deeperLevelGrids = AmrLevelGrids());
@@ -123,7 +127,7 @@ public:
   /*!
     @brief Destructor. Does nothing.
   */
-  ~EBHelmholtzOpFactory();
+  virtual ~EBHelmholtzOpFactory();
 
   /*!
     @brief Disallowed assignment operator
@@ -213,6 +217,11 @@ protected:
   Real m_beta;
 
   /*!
+    @brief Relaxation factor
+  */
+  Real m_relaxFactor;
+
+  /*!
     @brief Lower-left corner of computational domain
   */
   RealVect m_probLo;
@@ -222,6 +231,11 @@ protected:
     @brief AMR grids
   */
   AmrLevelGrids m_amrLevelGrids;
+
+  /*!
+    @brief Valid cells
+  */
+  AmrMask m_validCells;
 
   /*!
     @brief Ghost cell interpolations

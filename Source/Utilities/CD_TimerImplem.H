@@ -112,6 +112,7 @@ Timer::stopEvent(const std::string a_event) noexcept
 inline void
 Timer::printReportHeader(std::ostream& a_outputStream) const noexcept
 {
+  std::ios::fmtflags oldFlags = a_outputStream.flags();
 #ifdef _OPENMP
   if (omp_get_thread_num() == 0) {
 #endif
@@ -119,21 +120,15 @@ Timer::printReportHeader(std::ostream& a_outputStream) const noexcept
     header
       << "| ---------------------------------------------------------------------------------------------------------|"
       << "\n"
-      << "| " + m_processName + " kernel report: "
-      << "\n"
+      << "| " + m_processName + " kernel report: " << "\n"
       << "| ---------------------------------------------------------------------------------------------------------|"
       << "\n"
-      << "| " << std::left << std::setw(25) << "Event"
-      << "| " << std::right << std::setw(8) << "Loc. (s)"
-      << "| " << std::right << std::setw(8) << "Loc. (%)"
+      << "| " << std::left << std::setw(25) << "Event" << "| " << std::right << std::setw(8) << "Loc. (s)" << "| "
+      << std::right << std::setw(8) << "Loc. (%)"
 #ifdef CH_MPI
-      << "| " << std::right << std::setw(8) << "Min. (s)"
-      << "| " << std::right << std::setw(8) << "Max. (s)"
-      << "| " << std::right << std::setw(8) << "Avg. (s)"
-      << "| " << std::right << std::setw(8) << "Dev. (s)"
-      << "| " << std::right << std::setw(8) << "Min rank"
-      << "| " << std::right << std::setw(8) << "Max rank"
-      << "| "
+      << "| " << std::right << std::setw(8) << "Min. (s)" << "| " << std::right << std::setw(8) << "Max. (s)" << "| "
+      << std::right << std::setw(8) << "Avg. (s)" << "| " << std::right << std::setw(8) << "Dev. (s)" << "| "
+      << std::right << std::setw(8) << "Min rank" << "| " << std::right << std::setw(8) << "Max rank" << "| "
 #endif
       << "\n"
       << "| ---------------------------------------------------------------------------------------------------------|"
@@ -143,11 +138,13 @@ Timer::printReportHeader(std::ostream& a_outputStream) const noexcept
 #ifdef _OPENMP
   }
 #endif
+  a_outputStream.flags(oldFlags);
 }
 
 inline void
 Timer::printReportTail(std::ostream& a_outputStream, const std::pair<Real, Real> a_elapsedTime) const noexcept
 {
+  std::ios::fmtflags oldFlags = a_outputStream.flags();
 #ifdef _OPENMP
   if (omp_get_thread_num() == 0) {
 #endif
@@ -156,10 +153,8 @@ Timer::printReportTail(std::ostream& a_outputStream, const std::pair<Real, Real>
     tail
       << "| ---------------------------------------------------------------------------------------------------------|"
       << "\n"
-      << "| Local elapsed time  = " << std::fixed << std::setprecision(4) << a_elapsedTime.first << " seconds"
-      << "\n"
-      << "| Global elapsed time = " << std::fixed << std::setprecision(4) << a_elapsedTime.second << " seconds"
-      << "\n"
+      << "| Local elapsed time  = " << std::fixed << std::setprecision(4) << a_elapsedTime.first << " seconds" << "\n"
+      << "| Global elapsed time = " << std::fixed << std::setprecision(4) << a_elapsedTime.second << " seconds" << "\n"
       << "| ---------------------------------------------------------------------------------------------------------|"
       << "\n";
 
@@ -167,6 +162,7 @@ Timer::printReportTail(std::ostream& a_outputStream, const std::pair<Real, Real>
 #ifdef _OPENMP
   }
 #endif
+  a_outputStream.flags(oldFlags);
 }
 
 inline void
@@ -174,6 +170,7 @@ Timer::eventReport(std::ostream& a_outputStream, const bool a_localReportOnly) c
 {
   // This routine prints a header, the timing report for the various event, and a tail. All events are included
   // but unfinished ones are not counted towards the elapsed time.
+  std::ios::fmtflags oldFlags = a_outputStream.flags();
 #ifdef _OPENMP
   if (omp_get_thread_num() == 0) {
 #endif
@@ -293,8 +290,7 @@ Timer::eventReport(std::ostream& a_outputStream, const bool a_localReportOnly) c
                    << std::right << std::setw(8) << ssDevDuration.str() << "| " << std::right << std::setw(8)
                    << ssMinRank.str() << "| " << std::right << std::setw(8) << ssMaxRank.str()
 #endif
-                   << "| "
-                   << "\n";
+                   << "| " << "\n";
 
       a_outputStream << outputString.str();
     }
@@ -304,6 +300,7 @@ Timer::eventReport(std::ostream& a_outputStream, const bool a_localReportOnly) c
 #ifdef _OPENMP
   }
 #endif
+  a_outputStream.flags(oldFlags);
 }
 
 inline std::pair<Real, Real>
@@ -332,7 +329,7 @@ Timer::computeTotalElapsedTime(const bool a_localReportOnly) const noexcept
     elapsedTimeGlobal = elapsedTimeLocal;
   }
 #else
-  elapsedTimeGlobal  = elapsedTimeLocal;
+  elapsedTimeGlobal = elapsedTimeLocal;
 #endif
 
   return std::make_pair(elapsedTimeLocal, elapsedTimeGlobal);

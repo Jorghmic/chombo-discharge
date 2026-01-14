@@ -23,11 +23,11 @@
 #include <CD_PointParticle.H>
 #include <CD_RtLayout.H>
 #include <CD_McPhoto.H>
-#include "CD_FieldSolver.H"
-#include "CD_ItoSolver.H"
-#include "CD_CdrCTU.H"
-#include "CD_FieldSolverMultigrid.H"
-#include "CD_SurfaceODESolver.H"
+#include <CD_FieldSolver.H>
+#include <CD_ItoSolver.H>
+#include <CD_CdrCTU.H>
+#include <CD_FieldSolverGMG.H>
+#include <CD_SurfaceODESolver.H>
 #include <CD_NamespaceHeader.H>
 
 namespace Physics {
@@ -55,14 +55,14 @@ namespace Physics {
       @brief Base time stepper class that advances the Ito-KMC-Poisson system of equations. If you want a different
       underlying solver, change the template arguments. 
     */
-    template <typename I = ItoSolver, typename C = CdrCTU, typename R = McPhoto, typename F = FieldSolverMultigrid>
+    template <typename I = ItoSolver, typename C = CdrCTU, typename R = McPhoto, typename F = FieldSolverGMG>
     class ItoKMCStepper : public TimeStepper
     {
     public:
       static_assert(std::is_base_of<ItoSolver, I>::value, "I must derive from ItoSolver");
       static_assert(std::is_base_of<CdrSolver, C>::value, "C must derive from CdrSolver");
       static_assert(std::is_base_of<McPhoto, R>::value, "R must derive from McPhoto");
-      static_assert(std::is_base_of<FieldSolver, FieldSolverMultigrid>::value, "F must derive from FieldSolver");
+      static_assert(std::is_base_of<FieldSolver, FieldSolverGMG>::value, "F must derive from FieldSolver");
 
       /*!
 	@brief Default constructor. Sets default options. 
@@ -496,6 +496,11 @@ namespace Physics {
       int m_mergeInterval;
 
       /*!
+        @brief Storage for the maximum field strength that was computed
+      */
+      Real m_maxReducedField;
+
+      /*!
 	@brief Previous time step
       */
       Real m_prevDt;
@@ -741,16 +746,11 @@ namespace Physics {
       EBAMRCellData m_electricFieldParticle;
 
       /*!
-	@brief Storage for the critical time step computed by ItoKMCPhysics.
-	@note Defined on the fluid realm. 
-      */
-      EBAMRCellData m_criticalDt;
-
-      /*!
-	@brief Storage for the non-critical time step computed by ItoKMCPhysics
+	@brief Storage for the non-critical time step computed by ItoKMCPhysics.
+	@details This is computed using the non-critical reactions assuming eps=1
 	@note Defined on the fluid realm. 	
       */
-      EBAMRCellData m_nonCriticalDt;
+      EBAMRCellData m_kmcDt;
 
       /*!
 	@brief Storage for holding the energy sources for each species.
@@ -1636,6 +1636,14 @@ namespace Physics {
       */
       virtual void
       computePhysicsDt() noexcept;
+
+      /*!
+        @brief Special routine which performs a dummy KMC advance over a zero time step.
+        @details This is only used in order to compute a good physics-based time step before
+        the first time step
+      */
+      virtual void
+      computeDummyPhysicsDt() noexcept;
 
       /*!
 	@brief Compute total charge

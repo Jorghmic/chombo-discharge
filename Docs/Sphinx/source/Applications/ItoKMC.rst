@@ -3,6 +3,13 @@
 Îto-KMC plasma model
 ********************
 
+.. warning::
+
+   This section is not very well documented. The following featurse are definitely missing:
+
+   * Use of hybrid models (PPC-fluid specifications)
+   * How the physics time step is restricted
+
 Underlying model
 ================
 
@@ -60,22 +67,9 @@ In addition, the user can specify the maximum permitted growth or reduction in t
 
 These limits are given by the following input variables:
 
-.. code-block:: txt
-
-   ItoKMCGodunovStepper.physics_dt_factor                     = 1.0     ## Physics-based time step factor
-   ItoKMCGodunovStepper.min_particle_advection_cfl            = 0.0     ## Advective time step CFL restriction
-   ItoKMCGodunovStepper.max_particle_advection_cfl            = 1.0     ## Advective time step CFL restriction
-   ItoKMCGodunovStepper.min_particle_diffusion_cfl            = 0.0     ## Diffusive time step CFL restriction
-   ItoKMCGodunovStepper.max_particle_diffusion_cfl            = 1.E99   ## Diffusive time step CFL restriction
-   ItoKMCGodunovStepper.min_particle_advection_diffusion_cfl  = 0.0     ## Advection-diffusion time step CFL restriction
-   ItoKMCGodunovStepper.max_particle_advection_diffusion_cfl  = 1.E99   ## Advection-diffusion time step CFL restriction
-   ItoKMCGodunovStepper.fluid_advection_diffusion_cfl         = 0.5     ## Advection-diffusion time step CFL restriction
-   ItoKMCGodunovStepper.relax_dt_factor                       = 100.0   ## Relaxation time step restriction.
-   ItoKMCGodunovStepper.min_dt                                = 0.0     ## Minimum permitted time step
-   ItoKMCGodunovStepper.max_dt                                = 1.E99   ## Maximum permitted time step
-   ItoKMCGodunovStepper.max_growth_dt                         = 1.E99   ## Maximum permitted time step increase (dt * factor)
-   ItoKMCGodunovStepper.max_shrink_dt                         = 1.E99   ## Maximum permissible time step reduction (dt/factor)
-
+.. literalinclude:: ../../../../Physics/ItoKMC/TimeSteppers/ItoKMCGodunovStepper/CD_ItoKMCGodunovStepper.options
+   :language: text
+   :lines: 22-35
 
 Particle placement
 ------------------
@@ -94,8 +88,10 @@ The downstream method circumvents this source of numerical diffusion by only pla
 See :ref:`Chap:ItoKMCJSON` for instructions on how to assign the particle placement method.
 
 
+
+
 Spatial filtering
-_________________
+-----------------
 
 It is possible to apply filtering of the space-charge density prior to the field advance in order to reduce the impact of discrete particle noise.
 Filters are applied as follows:
@@ -107,11 +103,11 @@ Filters are applied as follows:
 where :math:`\alpha` is a filtering factor and :math:`s` a stride.
 Users can apply this filtering by adjusting the following input options:
 
-.. code-block:: txt
+.. code-block:: text
 
-   ItoKMCGodunovStepper.filter_num        = 0   # Number of filterings for the space-density
-   ItoKMCGodunovStepper.filter_max_stride = 1   # Maximum stride for filter
-   ItoKMCGodunovStepper.filter_alpha      = 0.5 # Filtering factor (0.5 is a bilinear filter)		
+   ItoKMCGodunovStepper.rho_filter_num        = 0    # Number of filterings for the space-density
+   ItoKMCGodunovStepper.rho_filter_max_stride = 1    # Maximum stride for filter
+   ItoKMCGodunovStepper.rho_filter_alpha      = 0.5  # Filtering factor (0.5 is a bilinear filter)		
 
 .. warning::
 
@@ -128,7 +124,7 @@ Particle management
 -------------------
 
 0D chemistry
-------------
+============
 
 The user input interface to the Îto-KMC model consists of a zero-dimensional plasma kinetics interface called ``ItoKMCPhysics``.
 This interface consists of the following main functionalities:
@@ -139,7 +135,7 @@ This interface consists of the following main functionalities:
 .. _Chap:ItoKMCPhysics:
 
 ItoKMCPhysics
-_____________
+-------------
 
 The complete C++ interface specification is given below.
 Because the interface is fairly extensive, ``chombo-discharge`` also supplies a JSON-based implementation called ``ItoKMCJSON`` (see :ref:`Chap:ItoKMCJSON`) for defining these things through file input.
@@ -158,19 +154,19 @@ The difference between ``ItoKMCPhysics`` and its implementation ``ItoKMCJSON`` i
    </details><br>   
 
 Species definitions
-___________________
+-------------------
 
 Species are defined either as input species for CDR solvers (see :ref:`Chap:CdrSolver`) or Îto solvers (see :ref:`Chap:ItoSolver`).
 It is sufficient to populate the ``ItoKMCPhysics`` species vectors ``m_cdrSpecies`` and ``m_itoSpecies`` if one only wants to initialize the solvers.
 See :ref:`Chap:ItoKMCPhysics` for their C++ definition.
 In addition to actually populating the vectors, users will typically also include initial conditions for the species.
-The interfaces permit initial particles for the Îto solvers, while the CDR solvers permit particles *and* initial density functions.
+The interfaces permit initial particles and density functions for both both solver types.
 Additionally, one must define all species associated with radiative transfer solvers.
 
 .. _Chap:ItoKMCPlasmaReaction:
 
 Plasma reactions
-________________
+----------------
 
 Plasma reactions in the Îto-KMC model are represented stoichiometrically as
 
@@ -205,12 +201,12 @@ since there are :math:`\frac{1}{2}X_A\left(X_A-1\right)` distinct pairs of parti
 Likewise, the fluid rate coefficient would be :math:`k_2 = c_2\Delta V/2`.
 
 The distinction between KMC and fluid rates is an important one; the reaction representation used in the Îto-KMC model only operates with the KMC rates :math:`c_j`, and it is us to the user to ensure that these are consistent with the fluid limit.
-Internally, these reactions are implemented through the dual state KMC implementation, see :ref:`Chap:KMCDualState`.
+Internally, these reactions are implemented through the dual state KMC implementation, see :ref:`Chap:KineticMonteCarlo`.
 During the reaction advance the user only needs to update the :math:`c_j` coefficients (typically done via an interface implementation); the calculation of the propensity is automatic and follows the standard KMC rules (e.g., the KMC solver accounts for the number of distinct pairs of particles).
 This must be done in the routine ``updateReactionRates(...)``, see :ref:`Chap:ItoKMCPhysics` for the complete specification.
 
 Photoionization
-_______________
+---------------
 
 Photo-reactions are also represented stoichiometrically as
 
@@ -263,14 +259,14 @@ Volumetric and surface absorption is then treated independently
 This type of pre-evaluation of the photo-reaction pathways is sensible in a statistical sense, but loses meaning if only a single photon is involved.
 
 Surface reactions
-_________________
+-----------------
 
 .. warning::
 
    Surface reactions are supported by :ref:`Chap:ItoKMCPhysics` but not implemented in the JSON interface (yet).
 
 Transport coefficients
-______________________
+----------------------
 
 Species mobilities and diffusion coefficients should be computed just as they are done in the fluid approximation.
 The ``ItoKMCPhysics`` interface requires implementations of two functions that define the coefficients as functions of :math:`\mu = \mu\left(t,\mathbf{x}, \mathbf{E}\right)`,
@@ -281,10 +277,36 @@ Note that these functions should return the *fluid coefficients*.
 
    There is currently no support for computing :math:`\mu` as a function of the species densities (e.g., the electron density), but this only requires modest extensions of the Îto-KMC module.
 
+.. _Chap:ItoKMCPhysicsDt:
+
+Time step calculation
+=====================
+
+The time step calculation in ``ItoKMCPhysics`` is based on the approximation of a reasonable time step as
+
+.. math::
+
+   \Delta t = \frac{X_i}{\left|\sum_r \nu_{ri} a_r\right|},
+
+where :math:`\nu_{ri}` is the state change in species :math:`i` due to firing of exactly one reaction of type :math:`r`.
+By default, the above is evaluated for all reactions, but the user can specify a subset of reactions for which the above constraint is applied.
+
+Caveats
+-------
+
+There are some caveats with using the time step limitation given above.
+For example, if there are no electrons in the simulation region, the above method will (correctly) return a very large time step based on the behavior of the other species.
+But one may very have *detachment* of electrons enabled, and the combination of a detachment event and a large time step is quite unfortunate.
+Because of this, the above constraint is also applied on proxy-states of :math:`\vec{X}` that have been completely exhausted through critical reactions, which provides a much more reasonable time step.
+
+A second factor involved in the time step calculation above is that one may have regions where :math:`X_i` is very small, but where :math:`\sum_r \nu_{ri} a_r` is very high.
+Outside of electron avalanching regions, detachment may completely dominate the time step calculation and cause a much smaller time step than necessary.
+Our resolution to this behavior is to permit the user to manually specify which reactions are important when computing the time step, see :ref:`Chap:ItoKMCJSONDt`.
+
 .. _Chap:ItoKMCJSON:
 
-JSON 0D chemistry interface
-===========================
+JSON interface
+==============
 
 The JSON-based chemistry interface (called ``ItoKMCJSON``) simplifies the definition of the plasma kinetics and initial conditions by permitting specifications through a JSON file.
 In addition, the JSON specification will permit the definition of background species that are not tracked as solvers (but that simply exist as a density function).
@@ -486,14 +508,14 @@ Tabulated versus height
 The molar fraction can be set as a tabulated value versus one of the Cartesian coordinate axis by setting the ``type`` specifier to ``table vs height``.
 The input data should be tabulated in column form, e.g.
 
-.. code-block:: txt
+.. code-block:: text
 
    # height       molar fraction
    0              0.1
    1              0.1 
    2              0.1
 
-The file parser (see :ref:`LookupTable`) will ignore the header file if it starts with a hashtag (#).
+The file parser (see :ref:`Chap:LookupTable`) will ignore the header file if it starts with a hashtag (#).
 Various other inputs are then also required:
 
 * ``file`` File name containing the height vs. molar fraction data (required).
@@ -511,7 +533,7 @@ Various other inputs are then also required:
 An example JSON specification is
 
 .. code-block:: json
-   :emphasize-lines: 6-18
+   :emphasize-lines: 6-19
       
    {
       "gas" : {
@@ -634,7 +656,7 @@ To set the coefficient as functions :math:`f = f\left(E/N\right)`, set the ``typ
 
 * ``file`` For specifying the file containing the input data, which must be organized as column data, e.g.
 
-  .. code-block:: txt
+  .. code-block:: text
 
      # E/N   alpha/N
      0       1E5
@@ -684,7 +706,8 @@ ________
 To include the Townsend coefficients as mesh variables in HDF5 files, include the ``plot`` specifier, e.g.
 
 .. code-block:: json
-   
+   :emphasize-lines: 5
+      
    {
       "alpha": {
          "type": "auto",
@@ -765,8 +788,9 @@ To set a constant coefficient, set the ``type`` specifier to constant and then a
 For example,
 
 .. code-block:: json
-   :emphasize-lines: 12-19
+   :emphasize-lines: 10-11
 
+                     
     "plasma species" :
     [
 	{
@@ -793,7 +817,7 @@ To set a coefficient that is constant vs :math:`N`, set the ``type`` specifier t
 For example,
 
 .. code-block:: json
-   :emphasize-lines: 12-19
+   :emphasize-lines: 10-11
 
     "plasma species" :
     [
@@ -821,7 +845,7 @@ To set the transport coefficients as functions :math:`f = f\left(E/N\right)`, se
 
 * ``file`` For specifying the file containing the input data, which must be organized as column data, e.g.
 
-  .. code-block:: txt
+  .. code-block:: text
 
      # E/N   mu/N
      0       1E5
@@ -875,7 +899,39 @@ An example JSON specification that uses a BOLSIG+ output file for parsing the da
 .. tip::
 
    The parser for the diffusion coefficient is analogous; simply replace ``mu*N`` by ``D*N``.
-    
+
+Parallel diffusion
+^^^^^^^^^^^^^^^^^^
+
+``ItoKMCJSON`` can limit diffusion against the electric field (or strictly speaking, the particle drift direction).
+The species specification permits a flag ``diffusion model`` that defauls to isotropic diffusion.
+However, it is possible to set this to other types of diffusion models.
+Currently, the available options are
+
+#. ``isotropic``, which sets an isotropic diffusion model.
+#. ``forward isotropic``, which uses isotropic diffusion but does not permit diffusion against the drift direction (this component is set to zero).
+
+The code block below shows an example:
+
+.. code-block:: json
+   :emphasize-lines: 9
+
+    "plasma species" :
+    [
+       {
+          "id": "e",          
+          "Z" : -1,           
+          "solver" : "ito",   
+          "mobile" : true,    
+          "diffusive" : true,
+          "diffusion model": "forward isotropic"
+       }
+    ]
+
+.. warning::
+
+   Changing the diffusion model to anything other than isotropic can have unintended physical side effects.
+   Although this functionality can enhance stability in e.g. cathode sheaths, it can have other unintended consequences. 
 
 Temperature
 ___________
@@ -938,7 +994,7 @@ To set the species temperature as a function :math:`T = T\left(E/N\right)`, set 
 
 * ``file`` For specifying the file containing the input data, which must be organized as column data *versus the mean energy*, e.g.
 
-  .. code-block:: txt
+  .. code-block:: text
 
      # E/N   energy (eV)
      0       1
@@ -1224,6 +1280,28 @@ For example:
 	  ]
        }
     ]
+
+Initial densities
+_________________
+
+One may include an initial density by setting the ``initial density`` parameter.
+For example:
+
+.. code-block:: json
+		     
+    "plasma species" :
+    [
+       {
+          "id": "e",           
+          "Z" : 1,             
+          "solver" : "cdr",    
+          "mobile" : true,     
+          "diffusive" : true,  
+	  "initial density": 1E10
+      }
+    ]
+
+If the species is defined as a particle species, computational particles will be generated within each grid so that the density is approximately as specified.
 
 Photon species
 --------------
@@ -1515,7 +1593,7 @@ An example specification is
       }
    ]
 
-**function TT A**
+**function T1T2 A**
 
 This specification is equivalent to a fluid rate
 
@@ -1531,12 +1609,12 @@ An example specification is
 		
    "plasma reactions": [
       {
-         "reaction": "A + B -> "  // Example reaction string. 
-	 "type": "function TT A", // Function based rate.
-	 "c1": 1.0,               // c1-coefficient
-	 "c2": 1.0,               // c2-coefficient
-	 "T1": "A",               // Which species temperature for T1
-	 "T2": "B"                // Which species temperature for T2	 
+         "reaction": "A + B -> "    // Example reaction string. 
+	 "type": "function T1T2 A", // Function based rate.
+	 "c1": 1.0,                 // c1-coefficient
+	 "c2": 1.0,                 // c2-coefficient
+	 "T1": "A",                 // Which species temperature for T1
+	 "T2": "B"                  // Which species temperature for T2	 
       }
    ]   
 
@@ -1675,7 +1753,7 @@ An example file is e.g.
    500  0.8
    1000 1.0
    
-This data is then internally convered to a uniformly spaced lookup table (see :ref:`LookupTable`).
+This data is then internally convered to a uniformly spaced lookup table (see :ref:`Chap:LookupTable`).
 
 Efficiency vs E
 ^^^^^^^^^^^^^^^^^
@@ -1787,6 +1865,19 @@ A JSON specification that includes this
 	}	
     ]
 
+This is equivalent to a source term
+
+.. math::
+
+   S &= \alpha n_e\left|\mathbf{v}_e\right|\left(1 + \frac{\mathbf{E}\cdot \left(D_e\nabla n_e\right)}{n_e\mu_eE^2}\right) \\
+   &=\alpha\left[n_e\left|\mathbf{v}_e\right| + \hat{\mathbf{E}}\cdot\left(D_e\nabla n_e\right)\right].
+
+One can recognize this term as a regular electron impact ionization source term (typically written as :math:`\alpha \mu n_e E`).
+With the gradient correction, the ionization source term is essentially computed using the full electron flux, i.e., including the diffusive electron flux.
+Note that the full electron flux has a preferential direction, and the physical interpretation of this direction is that if there is net diffusion against the electric field, electrons lose energy and the impact ionization source term is correspondingly lower.
+
+
+
 Understanding reaction rates
 ____________________________
 
@@ -1866,6 +1957,31 @@ Setting ``ItoKMCJSON.print_rates`` to true in the input file will write all reac
 Here, :math:`k` indicates the *fluid rate*, so for a reaction :math:`A + B + C \xrightarrow{k}\ldots` it will include the rate :math:`k`.
 Reactions are ordered identical to the order of the reactions in the JSON specification.
 This feature is mostly used for debugging or development efforts.
+
+
+.. _Chap:ItoKMCJSONDt:
+
+Time step calculation
+_____________________
+
+The user can manually specify which reactions are to be used when computing a chemistry time step :math:`\Delta t`, as discussed in :ref:`Chap:ItoKMCPhysicsDt`.
+To enable a time step calculation, specify the ``include_dt_calc`` flag in the reaction specifier, as shown below:
+
+.. code-block:: json
+		
+    "plasma reactions":
+    [
+	{
+	    "reaction": "e -> e + e + M+",
+	    "type": "alpha*v",     
+	    "species": "e",        
+	    "include_dt_calc": true
+	}	
+    ]
+
+.. tip::
+
+   It is normally sufficient to enable :math:`\Delta t` calculations for the ionizing reactions.
 
 Particle placement
 ------------------
@@ -2010,14 +2126,77 @@ The above example can be compressed by using a wildcard and an ``efficiencies`` 
    "dielectric emission":
    [
       {
-         "reaction": "Y -> @",
+      "reaction": "Y -> @",
 	 "@": ["e", "(null)"],
 	 "efficiencies": [1,9]
       }
    ]
 
 where for the sake of demonstration the efficiencies are set to 1 and 9 (rather than 0.1 and 0.9).
-This has no effect on the probabilities :math:`p(i)` given above. 
+This has no effect on the probabilities :math:`p(i)` given above.
+
+Field emission
+--------------
+
+Field emission for a specified species is supported by including a ``field emission`` specifier.
+Currently supported expressions are:
+
+#. Fowler-Nordheim emission:
+
+   .. math::
+
+      J(E) &= \frac{a F^2}{\phi}\exp\left(-v(f) b \phi^{3/2} F\right),\\
+      F &= \left(\beta E\right)\times 10^9,\\
+      a &= 1.541434\times 10^{-6}\,\text{AeV}/\text{V}^2, \\
+      b &= 6.830890\,\text{eV}^{-3/2}\text{V}\text{nm}^{-1},\\
+      v(f) &= 1 - f + \left(1/6\right)f\log(f),\\
+      f &\approx 1.439964\,\text{eV}^2\text{V}^{-1}\text{nm}\times \frac{F}{\phi^2}.
+
+   Here, :math:`\phi` is the work function (in electron volts) and :math:`\beta` is an empirical factor that describes local field amplifications.
+   Note that the above expression gives :math:`J` in units of :math:`\text{A}/\text{nm}^2`.
+      
+
+#. Schottky emission:
+
+   .. math::
+
+      J(E) &= \lambda A_0 T^2\exp\left(-\frac{\left(\phi-\Delta\phi\right)q_\text{e}}{k_{\text{B}}T}\right), \\
+      F &= \beta E, \\
+      A_0 &\approx 1.201736\times 10^6\,\text{A}\text{m}^{-2}\text{K}^{-2}, \\
+      \Delta \phi &= \sqrt{\frac{q_\text{e} F}{4\pi\epsilon_0}}.
+
+   Here, :math:`T` is the cathode temperature and :math:`\phi` is the work function (in electron volts).
+   The value :math:`\lambda` is typically around :math:`0.5`.
+   As for the Fowler-Nordheim equation, a factor that describes local field amplifications is given in :math:`\beta`. 
+
+.. warning::
+      
+   The expressions above both use a correction factor :math:`\beta` that describes local field amplifications.
+   Note, however, that the number of emitted electrons is proportional to the area of the emitter, and there are no current models in ``chombo-discharge`` that can compute this effective area.
+
+Below, we show an example that includes both Schottky and Fowler-Nordheim emission
+
+.. code-block:: json
+
+    "field emission":
+    [
+	{
+	    "species": "e",
+	    "surface": "electrode",
+	    "type": "fowler-nordheim",
+	    "work": 5.0,
+	    "beta": 1
+	},
+	{
+	    "species": "e",
+	    "surface": "electrode",
+	    "type": "schottky",
+	    "lambda": 0.5	    
+	    "temperature": 300,
+	    "work": 5.0,
+	    "beta": 1,
+	}
+    ]		
 
 
 .. _Chap:ItoKMCWarnings:
@@ -2045,7 +2224,65 @@ For example, some care might be required when using the Townsend attachment coef
 
 .. warning::
 
-   The JSON interface *does not guard* against inconsitencies in the user-provided chemistry, and provision of inconsistent :math:`\eta/N` and attachment reaction rates are quite possible. 
+   The JSON interface *does not guard* against inconsitencies in the user-provided chemistry, and provision of inconsistent :math:`\eta/N` and attachment reaction rates are quite possible.
+
+Tips and tricks
+---------------
+
+As with fluid drift-diffusion models, numerical instabilities can also occur due to unbounded growth in the plasma density.
+This is a process which has been linked both to the local field approximation and also to the presence of numerical diffusion.
+Simulations that fail to stabilize, i.e., where the field strength diverges, may benefit from the following stabilizing features:
+
+#. **Turn off parallel diffusion.**
+
+   The :ref:`Chap:ItoKMCJSON` class permits various diffusion models, some of which turn off backward diffusion completely.
+   Note that this also modifies the amount of *physical* diffusion in this direction.
+
+#. **Use gradient corrections.**
+
+   As discussed earlier, using a gradient correction can help limit non-physical ionization due to backwards-diffusing electrons.
+
+#. **Use downstream particle placement.**
+
+   Because the KMC algorithm solves for the number of particles in a grid cell, distributing new particles uniformly over a grid cell can lead to numerical diffusion where secondary electrons are placed in the wake of primary electrons.
+   Using downstream particle placement often leads to slightly more stable simulations.
+
+#. **Describe the primary species using an Ito solver.**
+
+   Similar to the point above, using a fluid solver for the ions may lead to upstream placement of the resulting positive charge.   
+
+#. **Use kd-tree particle merging.**
+
+   Currently particle merging strategies are reinitialization and merging based on bounding volume hierarchies.
+   If using reinitialization, new particles can be generated in the wake of old ones and can thus upset the charge distribution and cause numerical backwards diffusion (e.g., of electrons).
+
+#. **Numerically limit reaction rates.**
+
+   It is possible to specify that reaction rates will be numerically limited so that the rate does not exceed a specified threshold of :math:`\Delta t^{-1}`.
+   This is done through the JSON interface by setting ``limit max k*dt`` to some value.
+   Note that this changes the physics of the model, but usually enhances stability at larger time steps.
+   An example is given below:
+
+.. code-block:: json
+
+   "plasma reactions": [
+      {
+         "reaction": "e + N2 -> e + e + N2+"
+	 "type": "constant",
+	 "value": 1.E-12,
+	 "limit max k*dt" : 2.0
+      }
+   ]
+
+This will limit the rate such that :math:`k \left[\text[N]_2\right]\Delta t = 2`.
+I.e., all background species are first absorbed into the rate calculation before the rate is limited.
+We point out that limiting is not possible if both species on the left hand side are solver variables.
+
+
+.. important::
+   
+   The above features have been implemented in order to push the algorithm towards coarser grids and larger time steps.
+   It is essential that the user checks that the model converges when these features are applied.
       
 Example programs
 ================
@@ -2054,3 +2291,19 @@ Example programs that use the Îto-KMC module are given in
 
 * :file:`$DISCHARGE_HOME/Exec/Examples/ItoKMC/AirBasic` for a basic streamer discharge in atmospheric air.
 * :file:`$DISCHARGE_HOME/Exec/Examples/ItoKMC/AirDBD` for a streamer discharge over a dielectric.
+
+Setting up a new problem
+========================
+
+New problems that use the ``ItoKMC`` physics model are best set up by using the Python tools provided with the module.
+A full description is available in the ``README.md`` file contained in the folder:
+
+.. literalinclude:: ../../../../Physics/ItoKMC/README.md
+   :language: markdown
+              
+To see the list of available options type
+
+.. code-block:: bash
+
+   cd $DISCHARGE_HOME/Physics/ItoKMC
+   python setup.py --help  

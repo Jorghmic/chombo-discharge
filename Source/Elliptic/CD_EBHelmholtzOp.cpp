@@ -16,6 +16,7 @@
 #include <EBLevelGrid.H>
 #include <EBFluxFactory.H>
 #include <EBCellFactory.H>
+#include <EBLevelDataOps.H>
 #include <CH_Timer.H>
 
 // Our includes
@@ -36,6 +37,7 @@ EBHelmholtzOp::EBHelmholtzOp(const Location::Cell                             a_
                              const EBLevelGrid&                               a_eblgCoFi,
                              const EBLevelGrid&                               a_eblgCoar,
                              const EBLevelGrid&                               a_eblgCoarMG,
+                             const RefCountedPtr<LevelData<BaseFab<bool>>>&   a_validCells,
                              const RefCountedPtr<EBMultigridInterpolator>&    a_interpolator,
                              const RefCountedPtr<EBReflux>&                   a_fluxReg,
                              const RefCountedPtr<EBCoarAve>&                  a_coarAve,
@@ -55,7 +57,8 @@ EBHelmholtzOp::EBHelmholtzOp(const Location::Cell                             a_
                              const RefCountedPtr<LevelData<BaseIVFAB<Real>>>& a_BcoefIrreg,
                              const IntVect&                                   a_ghostPhi,
                              const IntVect&                                   a_ghostRhs,
-                             const Smoother&                                  a_smoother)
+                             const Smoother&                                  a_smoother,
+                             const Real&                                      a_relaxFactor)
   : LevelTGAHelmOp<LevelData<EBCellFAB>, EBFluxFAB>(false), // Time-independent
     m_smoother(a_smoother),
     m_dataLocation(a_dataLocation),
@@ -77,6 +80,7 @@ EBHelmholtzOp::EBHelmholtzOp(const Location::Cell                             a_
     m_eblgCoarMG(),
     m_domainBc(a_domainBc),
     m_ebBc(a_ebBc),
+    m_validCells(a_validCells),
     m_interpolator(a_interpolator),
     m_fluxReg(a_fluxReg),
     m_coarAve(a_coarAve),
@@ -97,16 +101,19 @@ EBHelmholtzOp::EBHelmholtzOp(const Location::Cell                             a_
 
   // Default settings. Always solve for comp = 0. If you want something different, copy your
   // input two different data holders before you use AMRMultiGrid.
-  m_doInterpCF = true;
-  m_doCoarsen  = true;
-  m_doExchange = true;
-  m_refluxFree = false;
-  m_profile    = false;
-  m_interval   = Interval(m_comp, m_comp);
+  m_doInterpCF       = true;
+  m_doCoarsen        = true;
+  m_doExchange       = true;
+  m_refluxFree       = false;
+  m_profile          = false;
+  m_interval         = Interval(m_comp, m_comp);
+  m_relaxFactor      = a_relaxFactor;
+  m_numSmoothPreCond = 10;
 
   ParmParse pp("EBHelmholtzOp");
   pp.query("reflux_free", m_refluxFree);
   pp.query("profile", m_profile);
+  pp.query("precond_smooth", m_numSmoothPreCond);
 
   m_timer = Timer("EBHelmholtzOp");
 
@@ -148,7 +155,7 @@ EBHelmholtzOp::EBHelmholtzOp(const Location::Cell                             a_
   // Define BC objects.
   const int ghostCF = m_hasCoar ? m_interpolator->getGhostCF() : 99;
   m_domainBc->define(m_dataLocation, m_eblg, m_probLo, m_dx);
-  m_ebBc->define(m_dataLocation, m_eblg, m_probLo, m_dx, ghostCF);
+  m_ebBc->define(m_dataLocation, m_eblg, m_validCells, m_probLo, m_dx, ghostCF);
 
   // Define stencils and compute relaxation terms.
   this->defineStencils();
@@ -263,6 +270,14 @@ EBHelmholtzOp::getFlux() const
   CH_TIME("EBHelmholtzOp::getFlux()");
 
   return *m_flux;
+}
+
+const LevelData<EBCellFAB>&
+EBHelmholtzOp::getRelaxationCoeff() const noexcept
+{
+  CH_TIME("EBHelmholtzOp::getRelaxationCoeff");
+
+  return m_relCoef;
 }
 
 void
@@ -511,7 +526,10 @@ EBHelmholtzOp::preCond(LevelData<EBCellFAB>& a_corr, const LevelData<EBCellFAB>&
 {
   CH_TIME("EBHelmholtzOp::preCond");
 
-  this->relax(a_corr, a_residual, 40);
+  this->assignLocal(a_corr, a_residual);
+  this->scaleLocal(a_corr, m_relCoef);
+
+  this->relax(a_corr, a_residual, m_numSmoothPreCond);
 }
 
 void
@@ -639,6 +657,27 @@ EBHelmholtzOp::scale(LevelData<EBCellFAB>& a_lhs, const Real& a_scale)
   CH_TIME("EBHelmholtzOp::scale");
 
   DataOps::scale(a_lhs, a_scale);
+}
+
+void
+EBHelmholtzOp::scaleLocal(LevelData<EBCellFAB>& a_lhs, const LevelData<EBCellFAB>& a_rhs) const noexcept
+{
+  CH_TIME("EBHelmholtzOp::scaleLocal");
+
+  CH_assert(a_lhs.disjointBoxLayout() == a_rhs.disjointBoxLayout());
+
+  const DataIterator& dit = a_lhs.dataIterator();
+
+  const int nbox = dit.size();
+#pragma omp parallel for schedule(runtime)
+  for (int mybox = 0; mybox < nbox; mybox++) {
+    const DataIndex& din = dit[mybox];
+
+    EBCellFAB&       lhs = a_lhs[din];
+    const EBCellFAB& rhs = a_rhs[din];
+
+    lhs *= rhs;
+  }
 }
 
 Real
@@ -1763,7 +1802,8 @@ EBHelmholtzOp::gauSaiRedBlackKernel(EBCellFAB&             a_Lcorr,
       }
     };
 
-    // Irregular red-black kernel.
+    // Irregular red-black kernel -- note that this is on the multi-valued cells. Singly-cut cells
+    // are done in regularKernel.
     auto irregularKernel = [&](const VolIndex& vof) -> void {
       const IntVect& iv = vof.gridIndex();
 
@@ -1927,7 +1967,7 @@ EBHelmholtzOp::computeDiagWeight()
     auto betaKernel = [&](const VolIndex& vof) -> void {
       const IntVect iv = vof.gridIndex();
 
-      VoFStencil& curStencil = m_relaxStencils[din](vof, m_comp);
+      VoFStencil curStencil = m_relaxStencils[din](vof, m_comp);
 
       Real betaWeight = EBArith::getDiagWeight(curStencil, vof);
       for (int dir = 0; dir < SpaceDim; dir++) {
@@ -1961,11 +2001,6 @@ EBHelmholtzOp::computeRelaxationCoefficient()
   // TLDR: Compute the relaxation coefficient in the operator. This is just the inverted diagonal of kappa*L(phi). It is inverted
   //       for performance reasons (because we divide by the diagonal in the relaxation steps).
 
-  Real sor_factor = 1.0;
-
-  ParmParse pp("EBHelmholtzOp");
-  pp.query("sor_factor", sor_factor);
-
   const DisjointBoxLayout& dbl = m_eblg.getDBL();
   const DataIterator&      dit = dbl.dataIterator();
 
@@ -1998,7 +2033,7 @@ EBHelmholtzOp::computeRelaxationCoefficient()
 
     // At this point we have computed kappa*diag(L), but we need to invert it.
     auto inversionKernel = [&](const IntVect& iv) -> void {
-      regRel(iv, m_comp) = sor_factor / regRel(iv, m_comp);
+      regRel(iv, m_comp) = m_relaxFactor / regRel(iv, m_comp);
     };
     BoxLoops::loop(cellBox, inversionKernel);
 
@@ -2007,10 +2042,11 @@ EBHelmholtzOp::computeRelaxationCoefficient()
       // m_alphaDiagWeight holds kappa * A
       const Real alphaWeight = m_alpha * m_alphaDiagWeight[din](vof, m_comp);
 
-      // m_betaWeight holds the diagonal part of kappa*div(b*grad(phi)) in the cut-cells.
+      // m_betaWeight holds the diagonal part of V^-1 * sum_faces(b*grad(phi)*dA_f) in the cut-cells. This includes
+      // the face fractions and the b-coefficient.
       const Real betaWeight = m_beta * m_betaDiagWeight[din](vof, m_comp);
 
-      m_relCoef[din](vof, m_comp) = sor_factor / (alphaWeight + betaWeight);
+      m_relCoef[din](vof, m_comp) = 1.0 / (alphaWeight + betaWeight);
     };
 
     BoxLoops::loop(m_vofIterStenc[din], irregularKernel);

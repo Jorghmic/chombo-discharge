@@ -63,6 +63,7 @@ ItoKMCStepper<I, C, R, F>::ItoKMCStepper() noexcept
   m_minDt                            = std::numeric_limits<Real>::min();
   m_maxDt                            = std::numeric_limits<Real>::max();
   m_physicsDt                        = std::numeric_limits<Real>::max();
+  m_maxReducedField                  = 0.0;
 }
 
 template <typename I, typename C, typename R, typename F>
@@ -286,6 +287,9 @@ ItoKMCStepper<I, C, R, F>::parseLoadBalance() noexcept
   }
   else if (str == "morton") {
     m_boxSort = BoxSorting::Morton;
+  }
+  else if (str == "hilbert") {
+    m_boxSort = BoxSorting::Hilbert;
   }
   else {
     const std::string err = "ItoKMCStepper::parseLoadBalance - 'box_sorting = " + str + "' not recognized";
@@ -606,9 +610,8 @@ ItoKMCStepper<I, C, R, F>::allocateInternals() noexcept
   // Current density.
   m_amr->allocate(m_currentDensity, m_fluidRealm, m_plasmaPhase, SpaceDim);
 
-  // Storage for the critical and non-critical time steps
-  m_amr->allocate(m_criticalDt, m_fluidRealm, m_plasmaPhase, 1);
-  m_amr->allocate(m_nonCriticalDt, m_fluidRealm, m_plasmaPhase, 1);
+  // Storage for the physics time step
+  m_amr->allocate(m_kmcDt, m_fluidRealm, m_plasmaPhase, 1);
 
   // Storage required for the reaction network.
   m_amr->allocate(m_fluidPPC, m_fluidRealm, m_plasmaPhase, numPlasmaSpecies);
@@ -642,8 +645,7 @@ ItoKMCStepper<I, C, R, F>::allocateInternals() noexcept
     m_amr->allocate(m_fluidYPC, m_fluidRealm, m_plasmaPhase, 1);
   }
 
-  DataOps::setValue(m_criticalDt, std::numeric_limits<Real>::max());
-  DataOps::setValue(m_nonCriticalDt, std::numeric_limits<Real>::max());
+  DataOps::setValue(m_kmcDt, std::numeric_limits<Real>::max());
 }
 
 template <typename I, typename C, typename R, typename F>
@@ -1178,8 +1180,6 @@ ItoKMCStepper<I, C, R, F>::printStepReport() noexcept
     pout() << m_name + "::printStepReport" << endl;
   }
 
-  const Real Emax = this->computeMaxReducedElectricField(m_plasmaPhase);
-
   const unsigned long long localParticlesBulk    = m_ito->getNumParticles(ItoSolver::WhichContainer::Bulk, true);
   const unsigned long long globalParticlesBulk   = m_ito->getNumParticles(ItoSolver::WhichContainer::Bulk, false);
   const unsigned long long localParticlesEB      = m_ito->getNumParticles(ItoSolver::WhichContainer::EB, true);
@@ -1264,7 +1264,7 @@ ItoKMCStepper<I, C, R, F>::printStepReport() noexcept
   //clang-format off
   const std::string whitespace = "                                   ";
   pout() << "                                   " + str << endl;
-  pout() << whitespace + "Emax        = " << Emax << " (Td)" << endl
+  pout() << whitespace + "Emax        = " << m_maxReducedField << " (Td)" << endl
          << whitespace + "Max n/N     = " << maxDensity << " (" << maxSolver << ")" << endl
          << whitespace + "Qplus       = " << Qplus << endl
          << whitespace + "Qminu       = " << Qminu << endl
@@ -1431,6 +1431,10 @@ ItoKMCStepper<I, C, R, F>::computeDt()
 
   const Real maxGrowthDt = m_prevDt > 0.0 ? m_prevDt * m_maxGrowthDt : dt;
   const Real minShrinkDt = m_prevDt > 0.0 ? m_prevDt / m_maxShrinkDt : 0.0;
+
+  if (m_timeStep == 0) {
+    this->computeDummyPhysicsDt();
+  }
 
   // Compute various time steps.
   timer.startEvent("Advection (Ito)");
@@ -1765,7 +1769,7 @@ ItoKMCStepper<I, C, R, F>::fillNeutralDensity() noexcept
     pout() << m_name + "::fillNeutralDensity" << endl;
   }
 
-  DataOps::setValue(m_neutralDensity, 0.0);
+  DataOps::setValue(m_neutralDensity, std::numeric_limits<Real>::max());
 
   for (int lvl = 0; lvl <= m_amr->getFinestLevel(); lvl++) {
     const DisjointBoxLayout& dbl    = m_amr->getGrids(m_fluidRealm)[lvl];
@@ -3587,7 +3591,7 @@ ItoKMCStepper<I, C, R, F>::computeReactiveItoParticlesPerCell(EBCellFAB&      a_
         }
       }
 
-      ppcRegular(iv, idx) = num;
+      a_ppc(vof, idx) = num;
     };
 
     // Run the kernels.
@@ -3948,12 +3952,12 @@ ItoKMCStepper<I, C, R, F>::advanceReactionNetwork(const EBAMRCellData& a_electri
   for (int i = 0; i < m_cdrPhotoiProducts.size(); i++) {
     m_cdrPhotoiProducts[i].organizeParticlesByPatch();
 
-    m_amr->depositParticles<PointParticle, &PointParticle::weight>(m_particleScratch1,
-                                                                   m_particleRealm,
-                                                                   m_plasmaPhase,
-                                                                   m_cdrPhotoiProducts[i],
-                                                                   DepositionType::NGP,
-                                                                   CoarseFineDeposition::Halo);
+    m_amr->depositParticles<PointParticle, const Real&, &PointParticle::weight>(m_particleScratch1,
+                                                                                m_particleRealm,
+                                                                                m_plasmaPhase,
+                                                                                m_cdrPhotoiProducts[i],
+                                                                                DepositionType::NGP,
+                                                                                CoarseFineDeposition::Halo);
 
     m_amr->copyData(m_fluidScratch1, m_particleScratch1);
     DataOps::volumeScale(m_fluidScratch1, m_amr->getDx());
@@ -4071,14 +4075,11 @@ ItoKMCStepper<I, C, R, F>::advanceReactionNetwork(EBCellFAB&       a_particlesPe
   Vector<const FArrayBox*> densityGradientsCDRReg(numCdrSpecies);
 
   // Handle to critical and non-critical time step containers.
-  EBCellFAB& criticalDt    = (*m_criticalDt[a_level])[a_din];
-  EBCellFAB& nonCriticalDt = (*m_nonCriticalDt[a_level])[a_din];
+  EBCellFAB& physicsDt = (*m_kmcDt[a_level])[a_din];
 
-  FArrayBox& criticalDtReg    = criticalDt.getFArrayBox();
-  FArrayBox& nonCriticalDtReg = nonCriticalDt.getFArrayBox();
+  FArrayBox& physicsDtReg = physicsDt.getFArrayBox();
 
-  criticalDt.setVal(std::numeric_limits<Real>::max());
-  nonCriticalDt.setVal(std::numeric_limits<Real>::max());
+  physicsDt.setVal(std::numeric_limits<Real>::max());
 
   for (auto it = m_ito->iterator(); it.ok(); ++it) {
     const RefCountedPtr<ItoSolver>& solver = it();
@@ -4114,7 +4115,7 @@ ItoKMCStepper<I, C, R, F>::advanceReactionNetwork(EBCellFAB&       a_particlesPe
 
       // Populate the data holders that the physics interface requires.
       for (int i = 0; i < numPlasmaSpecies; i++) {
-        particles[i] = (long long)particlesPerCellReg(iv, i);
+        particles[i] = llround(particlesPerCellReg(iv, i));
       }
 
       for (int i = 0; i < numPhotonSpecies; i++) {
@@ -4137,11 +4138,9 @@ ItoKMCStepper<I, C, R, F>::advanceReactionNetwork(EBCellFAB&       a_particlesPe
       }
 
       // Do the physics advance.
-      Real critDt    = std::numeric_limits<Real>::max();
-      Real nonCritDt = std::numeric_limits<Real>::max();
+      Real physDt = std::numeric_limits<Real>::max();
 
-      m_physics
-        ->advanceKMC(particles, newPhotons, critDt, nonCritDt, densities, densityGradients, a_dt, E, pos, a_dx, 1.0);
+      m_physics->advanceKMC(particles, newPhotons, physDt, densities, densityGradients, a_dt, E, pos, a_dx, 1.0);
 
       // Repopulate the input data holders with the new number of particles/photons per cell.
       for (int i = 0; i < numPlasmaSpecies; i++) {
@@ -4152,8 +4151,7 @@ ItoKMCStepper<I, C, R, F>::advanceReactionNetwork(EBCellFAB&       a_particlesPe
         newPhotonsReg(iv, i) = 1.0 * newPhotons[i];
       }
 
-      criticalDtReg(iv, 0)    = critDt;
-      nonCriticalDtReg(iv, 0) = nonCritDt;
+      physicsDtReg(iv, 0) = physDt;
     }
   };
 
@@ -4161,14 +4159,14 @@ ItoKMCStepper<I, C, R, F>::advanceReactionNetwork(EBCellFAB&       a_particlesPe
   auto irregularKernel = [&](const VolIndex& vof) -> void {
     const IntVect iv = vof.gridIndex();
 
-    if (validCells(iv, 0)) {
+    if (ebisbox.isIrregular(iv) && validCells(iv, 0)) {
       const Real     kappa = ebisbox.volFrac(vof);
       const RealVect pos   = probLo + Location::position(Location::Cell::Centroid, vof, ebisbox, a_dx);
       const RealVect E = RealVect(D_DECL(a_electricField(vof, 0), a_electricField(vof, 1), a_electricField(vof, 2)));
 
       // Initialize for this cell.
       for (int i = 0; i < numPlasmaSpecies; i++) {
-        particles[i] = (long long)a_particlesPerCell(vof, i);
+        particles[i] = llround(a_particlesPerCell(vof, i));
       }
 
       for (int i = 0; i < numPhotonSpecies; i++) {
@@ -4191,11 +4189,9 @@ ItoKMCStepper<I, C, R, F>::advanceReactionNetwork(EBCellFAB&       a_particlesPe
       }
 
       // Do the physics advance
-      Real critDt    = std::numeric_limits<Real>::max();
-      Real nonCritDt = std::numeric_limits<Real>::max();
+      Real physDt = std::numeric_limits<Real>::max();
 
-      m_physics
-        ->advanceKMC(particles, newPhotons, critDt, nonCritDt, densities, densityGradients, a_dt, E, pos, a_dx, kappa);
+      m_physics->advanceKMC(particles, newPhotons, physDt, densities, densityGradients, a_dt, E, pos, a_dx, kappa);
 
       // Repopulate the input data holders with the new number of particles/photons per cell.
       for (int i = 0; i < numPlasmaSpecies; i++) {
@@ -4206,8 +4202,7 @@ ItoKMCStepper<I, C, R, F>::advanceReactionNetwork(EBCellFAB&       a_particlesPe
         a_newPhotonsPerCell(vof, i) = 1.0 * newPhotons[i];
       }
 
-      criticalDt(vof, 0)    = critDt;
-      nonCriticalDt(vof, 0) = nonCritDt;
+      physicsDt(vof, 0) = physDt;
     }
   };
 
@@ -4403,8 +4398,8 @@ ItoKMCStepper<I, C, R, F>::reconcileParticles(const EBCellFAB& a_newParticlesPer
       // Populate the per-cell Ito data
       for (int i = 0; i < numItoSpecies; i++) {
         itoParticles[i]    = &((*itoParticlesFAB[i])(iv, 0));
-        numNewParticles[i] = (long long)(a_newParticlesPerCell.getSingleValuedFAB()(iv, i));
-        numOldParticles[i] = (long long)(a_oldParticlesPerCell.getSingleValuedFAB()(iv, i));
+        numNewParticles[i] = llround(a_newParticlesPerCell.getSingleValuedFAB()(iv, i));
+        numOldParticles[i] = llround(a_oldParticlesPerCell.getSingleValuedFAB()(iv, i));
       }
 
       // Populate the per-cell CDR data
@@ -4417,7 +4412,7 @@ ItoKMCStepper<I, C, R, F>::reconcileParticles(const EBCellFAB& a_newParticlesPer
         bulkPhotons[i]   = &((*bulkPhotonsFAB[i])(iv, 0));
         sourcePhotons[i] = &((*sourcePhotonsFAB[i])(iv, 0));
 
-        numNewPhotons[i] = (long long)(a_newPhotonsPerCell.getSingleValuedFAB()(iv, i));
+        numNewPhotons[i] = llround(a_newPhotonsPerCell.getSingleValuedFAB()(iv, i));
 
         // sourcePhotons will hold the NEW number of photons to be generated -- it should already
         // have been cleared in upstream code but I'm leaving this in for safety.
@@ -4490,8 +4485,8 @@ ItoKMCStepper<I, C, R, F>::reconcileParticles(const EBCellFAB& a_newParticlesPer
       // Populate the per-cell particle data.
       for (int i = 0; i < numItoSpecies; i++) {
         itoParticles[i]    = &((*itoParticlesFAB[i])(iv, 0));
-        numNewParticles[i] = (long long)(a_newParticlesPerCell(vof, i));
-        numOldParticles[i] = (long long)(a_oldParticlesPerCell(vof, i));
+        numNewParticles[i] = llround(a_newParticlesPerCell(vof, i));
+        numOldParticles[i] = llround(a_oldParticlesPerCell(vof, i));
       }
 
       // Populate the per-cell CDR data
@@ -4504,7 +4499,7 @@ ItoKMCStepper<I, C, R, F>::reconcileParticles(const EBCellFAB& a_newParticlesPer
         bulkPhotons[i]   = &((*bulkPhotonsFAB[i])(iv, 0));
         sourcePhotons[i] = &((*sourcePhotonsFAB[i])(iv, 0));
 
-        numNewPhotons[i] = (long long)(a_newPhotonsPerCell(vof, i));
+        numNewPhotons[i] = llround(a_newPhotonsPerCell(vof, i));
 
         // sourcePhotons will hold the NEW number of photons to be generated -- it should already
         // have been cleared in upstream code but I'm leaving this in for safety.
@@ -5152,19 +5147,19 @@ ItoKMCStepper<I, C, R, F>::resolveSecondaryEmissionEB(Vector<ParticleContainer<I
     if (Z != 0) {
 
       // Add charge from primary particles
-      m_amr->depositParticles<ItoParticle, &ItoParticle::weight>(m_particleScratchEB,
-                                                                 m_particleRealm,
-                                                                 m_plasmaPhase,
-                                                                 *a_primaryParticles[idx]);
+      m_amr->depositParticles<ItoParticle, const Real&, &ItoParticle::weight>(m_particleScratchEB,
+                                                                              m_particleRealm,
+                                                                              m_plasmaPhase,
+                                                                              *a_primaryParticles[idx]);
 
       m_amr->copyData(m_fluidScratchEB, m_particleScratchEB);
       DataOps::incr(a_surfaceChargeDensity, m_fluidScratchEB, 1.0 * Z * Units::Qe);
 
       // Subtract charge from secondary particles
-      m_amr->depositParticles<ItoParticle, &ItoParticle::weight>(m_particleScratchEB,
-                                                                 m_particleRealm,
-                                                                 m_plasmaPhase,
-                                                                 *a_secondaryParticles[idx]);
+      m_amr->depositParticles<ItoParticle, const Real&, &ItoParticle::weight>(m_particleScratchEB,
+                                                                              m_particleRealm,
+                                                                              m_plasmaPhase,
+                                                                              *a_secondaryParticles[idx]);
 
       m_amr->copyData(m_fluidScratchEB, m_particleScratchEB);
       DataOps::incr(a_surfaceChargeDensity, m_fluidScratchEB, -1.0 * Z * Units::Qe);
@@ -5230,9 +5225,66 @@ ItoKMCStepper<I, C, R, F>::computePhysicsDt() noexcept
   Real maxDt = std::numeric_limits<Real>::max();
   Real minDt = std::numeric_limits<Real>::max();
 
-  DataOps::getMaxMin(maxDt, minDt, m_nonCriticalDt, 0);
+  DataOps::getMaxMin(maxDt, minDt, m_kmcDt, 0);
 
   m_physicsDt = minDt;
+}
+
+template <typename I, typename C, typename R, typename F>
+void
+ItoKMCStepper<I, C, R, F>::computeDummyPhysicsDt() noexcept
+{
+  CH_TIME("ItoKMCStepper::computeDummyPhysicsDt()");
+  if (m_verbosity > 5) {
+    pout() << m_name + "::computeDummyPhysicsDt()" << endl;
+  }
+
+  const int numItoSpecies    = m_physics->getNumItoSpecies();
+  const int numCdrSpecies    = m_physics->getNumCdrSpecies();
+  const int numPhotonSpecies = m_physics->getNumPhotonSpecies();
+
+  // Sort by cells
+  (this->m_ito)->organizeParticlesByCell(ItoSolver::WhichContainer::Bulk);
+  this->sortPhotonsByCell(McPhoto::WhichContainer::Bulk);
+  this->sortPhotonsByCell(McPhoto::WhichContainer::Source);
+
+  // Compute the number of reactive particles for both Ito and CDR species. Also do a backup of the initial number
+  // of particles per cell. This is required when reconciling the results lateron.
+  if (numItoSpecies > 0) {
+    this->computeReactiveItoParticlesPerCell(m_particleItoPPC);
+
+    const Interval srcInterv(0, numItoSpecies - 1);
+    const Interval dstInterv(0, numItoSpecies - 1);
+
+    m_amr->copyData(m_fluidPPC, m_particleItoPPC, dstInterv, srcInterv);
+
+    DataOps::copy(m_particleOldItoPPC, m_particleItoPPC);
+  }
+  if (numCdrSpecies > 0) {
+    this->computeReactiveCdrParticlesPerCell(m_fluidCdrPPC);
+
+    const Interval srcInterv(0, numCdrSpecies - 1);
+    const Interval dstInterv(numItoSpecies, numItoSpecies + numCdrSpecies - 1);
+
+    m_amr->copyData(m_fluidPPC, m_fluidCdrPPC, dstInterv, srcInterv);
+
+    DataOps::copy(m_fluidOldCdrPPC, m_fluidCdrPPC);
+  }
+
+  DataOps::setValue(m_fluidYPC, 0.0);
+  DataOps::setValue(m_particleYPC, 0.0);
+
+  // Advance the reaction network using a zero time step, which should not trigger any change in the state vector.
+  for (int lvl = 0; lvl <= m_amr->getFinestLevel(); lvl++) {
+    this->advanceReactionNetwork(*m_fluidPPC[lvl], *m_fluidYPC[lvl], *m_electricFieldFluid[lvl], lvl, 0.0);
+  }
+
+  // Reorganize into patch
+  (this->m_ito)->organizeParticlesByPatch(ItoSolver::WhichContainer::Bulk);
+  this->sortPhotonsByPatch(McPhoto::WhichContainer::Bulk);
+  this->sortPhotonsByPatch(McPhoto::WhichContainer::Source);
+
+  this->computePhysicsDt();
 }
 
 template <typename I, typename C, typename R, typename F>
@@ -5644,7 +5696,7 @@ ItoKMCStepper<I, C, R, F>::loadBalanceParticleRealm(Vector<Vector<int>>&        
       BoxLoops::loop(cellBox, regularKernel);
     }
 
-    ParallelOps::vectorSum(levelLoads);
+    ParallelOps::sum(levelLoads);
 
     // Add the "constant" load from the other PPC stuff
     for (LayoutIterator lit = dbl.layoutIterator(); lit.ok(); ++lit) {
@@ -5852,12 +5904,12 @@ ItoKMCStepper<I, C, R, F>::computeEdotJSource(const Real a_dt) noexcept
       }
 
       // Interpolate the potential to the current particle position which gives us V(B) for the particles.
-      m_amr->interpolateParticles<CompParticle, &CompParticle::template real<1>>(computationParticles,
-                                                                                 m_particleRealm,
-                                                                                 m_plasmaPhase,
-                                                                                 m_particleScratch1,
-                                                                                 solver->getDeposition(),
-                                                                                 false);
+      m_amr->interpolateParticles<CompParticle, Real&, &CompParticle::template real<1>>(computationParticles,
+                                                                                        m_particleRealm,
+                                                                                        m_plasmaPhase,
+                                                                                        m_particleScratch1,
+                                                                                        solver->getDeposition(),
+                                                                                        false);
 
       // Move the particles back to their old positions and interpolate the potential there.
       for (int lvl = 0; lvl <= m_amr->getFinestLevel(); lvl++) {
@@ -5887,11 +5939,11 @@ ItoKMCStepper<I, C, R, F>::computeEdotJSource(const Real a_dt) noexcept
       computationParticles.remap();
 
       // Interpolate the potential to the previous particle position which gives us V(A) for the particles.
-      m_amr->interpolateParticles<CompParticle, &CompParticle::template real<2>>(computationParticles,
-                                                                                 m_particleRealm,
-                                                                                 m_plasmaPhase,
-                                                                                 m_particleScratch1,
-                                                                                 solver->getDeposition());
+      m_amr->interpolateParticles<CompParticle, Real&, &CompParticle::template real<2>>(computationParticles,
+                                                                                        m_particleRealm,
+                                                                                        m_plasmaPhase,
+                                                                                        m_particleScratch1,
+                                                                                        solver->getDeposition());
 
       // Move the particles back again and multiply the weight by Z * (V(A) - V(B))/a_dt
       for (int lvl = 0; lvl <= m_amr->getFinestLevel(); lvl++) {
@@ -5918,12 +5970,13 @@ ItoKMCStepper<I, C, R, F>::computeEdotJSource(const Real a_dt) noexcept
       computationParticles.remap();
 
       // Deposit the particles
-      m_amr->depositParticles<CompParticle, &CompParticle::template real<0>>(m_particleScratch1,
-                                                                             m_particleRealm,
-                                                                             m_plasmaPhase,
-                                                                             computationParticles,
-                                                                             solver->getDeposition(),
-                                                                             solver->getCoarseFineDeposition());
+      m_amr->depositParticles<CompParticle, const Real&, &CompParticle::template real<0>>(
+        m_particleScratch1,
+        m_particleRealm,
+        m_plasmaPhase,
+        computationParticles,
+        solver->getDeposition(),
+        solver->getCoarseFineDeposition());
 
       // Copy data back onto the fluid realm.
       m_amr->copyData(m_fluidScratch1, m_particleScratch1);

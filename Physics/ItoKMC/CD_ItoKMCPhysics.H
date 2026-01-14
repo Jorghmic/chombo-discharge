@@ -59,6 +59,11 @@ namespace Physics {
     using KMCSolverType = KMCSolver<KMCReaction, KMCState, FPR>;
 
     /*!
+      @brief Basic function for diffusing a particle
+    */
+    using DiffusionFunction = std::function<RealVect(const ItoParticle& p, const Real& a_dt)>;
+
+    /*!
       @brief Map to species type
       @details This is just for distinguishing between species that are treated with an Ito or CDR formalism
     */
@@ -144,6 +149,12 @@ namespace Physics {
       */
       const Vector<RefCountedPtr<RtSpecies>>&
       getRtSpecies() const;
+
+      /*!
+        @brief Get diffusion functions
+      */
+      const Vector<DiffusionFunction>&
+      getItoDiffusionFunctions() const noexcept;
 
       /*!
 	@brief Get number of plot variables
@@ -285,11 +296,10 @@ namespace Physics {
                           const int                        a_matIndex) const noexcept = 0;
 
       /*!
-	@brief Advance particles. 
+	@brief Advance the reaction network using the KMC algorithm.
 	@param[inout] a_numParticles  Number of physical particles
 	@param[out]   a_numNewPhotons Number of new physical photons to generate (of each type)
-	@param[out]   a_criticalDt    Critical KMC time step computed at end of integration
-	@param[out]   a_nonCriticalDt Non-critical KMC time step computed at end of integration	
+	@param[out]   a_physicsDt     Reasonable KMC time step computed at end of integration with eps = 1
 	@param[in]    a_phi           Plasma species densities. 
 	@param[in]    a_gradPhi       Plasma species density gradients. 
 	@param[in]    a_dt            Time step
@@ -301,8 +311,7 @@ namespace Physics {
       inline void
       advanceKMC(Vector<FPR>&            a_numParticles,
                  Vector<FPR>&            a_numNewPhotons,
-                 Real&                   a_criticalDt,
-                 Real&                   a_nonCriticalDt,
+                 Real&                   a_physicsDt,
                  const Vector<Real>&     a_phi,
                  const Vector<RealVect>& a_gradPhi,
                  const Real              a_dt,
@@ -440,6 +449,11 @@ namespace Physics {
       bool m_isDefined;
 
       /*!
+	@brief If true, increment onto existing particles rather than creating new ones
+      */
+      bool m_incrementNewParticles;
+
+      /*!
 	@brief Is the KMC solver defined or not.
       */
       static thread_local bool m_hasKMCSolver;
@@ -472,6 +486,11 @@ namespace Physics {
       std::vector<ItoKMCPhotoReaction> m_photoReactions;
 
       /*!
+        @brief List of reactions that are a part of the time step limitation. 
+      */
+      std::vector<Real> m_reactiveDtFactors;
+
+      /*!
 	@brief Random number generators for photoionization pathways. 
 	@details The first index is the photon index, i.e. entry in m_photonSpecies. The second index in the
 	map is an RNG generator for selecting photo-reactions, and a map which associates the returned
@@ -483,6 +502,11 @@ namespace Physics {
 	@brief Surface reactions.
       */
       ItoKMCSurfaceReactionSet m_surfaceReactions;
+
+      /*!
+        @brief Diffusion functions for the various Ito species
+      */
+      Vector<DiffusionFunction> m_itoDiffusionFunctions;
 
       /*!
 	@brief List of solver-tracked particle drift-diffusion species. 
@@ -593,7 +617,8 @@ namespace Physics {
 	@param[in] a_E       Electric field
 	@param[in] a_pos     Physical position
 	@param[in] a_phi     Plasma species densities
-	@param[in] a_gradPhi Density gradients for plasma species. 
+	@param[in] a_gradPhi Density gradients for plasma species.
+	@param[in] a_dt      Time step
 	@param[in] a_dx      Grid resolution
 	@param[in] a_kappa   Cut-cell volume fraction
 	@note Must be implemented by the user.
@@ -604,6 +629,7 @@ namespace Physics {
                           const RealVect                                   a_pos,
                           const Vector<Real>&                              a_phi,
                           const Vector<RealVect>&                          a_gradPhi,
+                          const Real                                       a_dt,
                           const Real                                       a_dx,
                           const Real                                       a_kappa) const noexcept = 0;
 
@@ -640,6 +666,33 @@ namespace Physics {
                               const RealVect&          a_electricField,
                               const RealVect&          a_cellPos,
                               const Real&              a_dx) const noexcept;
+
+      /*!
+        @brief No diffusion function for a particle
+        @param[in] a_particle Particle to diffuse
+        @param[in] a_dt Time step
+        @return Returns the zero vector.
+      */
+      inline RealVect
+      noDiffusion(const ItoParticle& a_particle, const Real a_dt) const noexcept;
+
+      /*!
+        @brief Isotropic diffusion function for a particle
+        @param[in] a_particle Particle to diffuse
+        @param[in] a_dt Time step
+        @return Returns sqrt(2 * D * a_dt) * N(0,1), where N(0,1) is a normal distribution
+      */
+      inline RealVect
+      isotropicDiffusion(const ItoParticle& a_particle, const Real a_dt) const noexcept;
+
+      /*!
+        @brief Quasi-isotropic diffusion function for a particle which does not permit backward diffusion.
+        @param[in] a_particle Particle to diffuse
+        @param[in] a_dt Time step
+        @return Same as isotropic diffusion, but ensures that the particle cannot diffuse backward
+      */
+      inline RealVect
+      forwardIsotropicDiffusion(const ItoParticle& a_particle, const Real a_dt) const noexcept;
     };
   } // namespace ItoKMC
 } // namespace Physics

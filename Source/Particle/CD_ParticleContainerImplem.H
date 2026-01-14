@@ -564,12 +564,12 @@ ParticleContainer<P>::addParticles(const List<P>& a_particles)
   // TLDR: This routine is almost a precise copy of the remap routine, with the exception that the particles to be remapped
   //       are only the input particles rather than everything inside m_particles
 
-  const unsigned int numRanks = numProc();
-  const unsigned int myRank   = procID();
+  const uint32_t numRanks = numProc();
+  const uint32_t myRank   = procID();
 
-  using LevelAndIndex = std::pair<unsigned int, unsigned int>;
+  using LevelAndIndex = std::pair<uint32_t, uint32_t>;
 
-  std::vector<std::map<LevelAndIndex, List<P>>> particlesToSend(numRanks);
+  std::vector<ParticleMap<List<P>>> particlesToSend(numRanks);
 
 #pragma omp parallel
   {
@@ -580,7 +580,7 @@ ParticleContainer<P>::addParticles(const List<P>& a_particles)
       outcasts.join(a_particles);
     }
 
-    std::vector<std::map<LevelAndIndex, List<P>>> threadLocalParticlesToSend(numRanks);
+    std::vector<ParticleMap<List<P>>> threadLocalParticlesToSend(numRanks);
 
     // Collect particles owned by this rank/thread.
     this->transferParticlesToSingleList(outcasts, m_particles);
@@ -598,7 +598,7 @@ ParticleContainer<P>::addParticles(const List<P>& a_particles)
 
   // If using MPI then we have to scatter the particles across MPI ranks.
 #ifdef CH_MPI
-  std::map<LevelAndIndex, List<P>> receivedParticles;
+  ParticleMap<List<P>> receivedParticles;
 
   ParticleOps::scatterParticles(receivedParticles, particlesToSend);
 
@@ -630,12 +630,12 @@ ParticleContainer<P>::addParticlesDestructive(List<P>& a_particles)
   // TLDR: This routine is almost a precise copy of the remap routine, with the exception that the particles to be remapped
   //       are only the input particles rather than everything inside m_particles
 
-  const unsigned int numRanks = numProc();
-  const unsigned int myRank   = procID();
+  const uint32_t numRanks = numProc();
+  const uint32_t myRank   = procID();
 
-  using LevelAndIndex = std::pair<unsigned int, unsigned int>;
+  using LevelAndIndex = std::pair<uint32_t, uint32_t>;
 
-  std::vector<std::map<LevelAndIndex, List<P>>> particlesToSend(numRanks);
+  std::vector<ParticleMap<List<P>>> particlesToSend(numRanks);
 
 #pragma omp parallel
   {
@@ -646,7 +646,7 @@ ParticleContainer<P>::addParticlesDestructive(List<P>& a_particles)
       outcasts.catenate(a_particles);
     }
 
-    std::vector<std::map<LevelAndIndex, List<P>>> threadLocalParticlesToSend(numRanks);
+    std::vector<ParticleMap<List<P>>> threadLocalParticlesToSend(numRanks);
 
     // Collect particles owned by this rank/thread.
     this->transferParticlesToSingleList(outcasts, m_particles);
@@ -664,7 +664,7 @@ ParticleContainer<P>::addParticlesDestructive(List<P>& a_particles)
 
   // If using MPI then we have to scatter the particles across MPI ranks.
 #ifdef CH_MPI
-  std::map<LevelAndIndex, List<P>> receivedParticles;
+  ParticleMap<List<P>> receivedParticles;
 
   ParticleOps::scatterParticles(receivedParticles, particlesToSend);
 
@@ -778,18 +778,18 @@ ParticleContainer<P>::addParticles(const ParticleContainer<P>& a_otherContainer)
     // If we're adding particles across realms we need to collect the input particles onto lists that get remapped
     // into m_particles. A full explanation of how this works is given in the remap routin.
 
-    const unsigned int numRanks = numProc();
-    const unsigned int myRank   = procID();
+    const uint32_t numRanks = numProc();
+    const uint32_t myRank   = procID();
 
-    using LevelAndIndex = std::pair<unsigned int, unsigned int>;
+    using LevelAndIndex = std::pair<uint32_t, uint32_t>;
 
-    std::vector<std::map<LevelAndIndex, List<P>>> particlesToSend(numRanks);
+    std::vector<ParticleMap<List<P>>> particlesToSend(numRanks);
 
 #pragma omp parallel
     {
       List<P> outcasts;
 
-      std::vector<std::map<LevelAndIndex, List<P>>> threadLocalParticlesToSend(numRanks);
+      std::vector<ParticleMap<List<P>>> threadLocalParticlesToSend(numRanks);
 
       // Collect particles owned by this rank/thread, but on the other realm.
       a_otherContainer.copyParticlesToSingleList(outcasts, a_otherContainer.getParticles());
@@ -807,7 +807,7 @@ ParticleContainer<P>::addParticles(const ParticleContainer<P>& a_otherContainer)
 
     // If using MPI then we have to scatter the particles across MPI ranks.
 #ifdef CH_MPI
-    std::map<LevelAndIndex, List<P>> receivedParticles;
+    ParticleMap<List<P>> receivedParticles;
 
     ParticleOps::scatterParticles(receivedParticles, particlesToSend);
 
@@ -865,18 +865,18 @@ ParticleContainer<P>::addParticlesDestructive(ParticleContainer<P>& a_otherConta
     // If we're adding particles across realms we need to collect the input particles onto lists that get remapped
     // into m_particles. A full explanation of how this works is given in the remap routin.
 
-    const unsigned int numRanks = numProc();
-    const unsigned int myRank   = procID();
+    const uint32_t numRanks = numProc();
+    const uint32_t myRank   = procID();
 
-    using LevelAndIndex = std::pair<unsigned int, unsigned int>;
+    using LevelAndIndex = std::pair<uint32_t, uint32_t>;
 
-    std::vector<std::map<LevelAndIndex, List<P>>> particlesToSend(numRanks);
+    std::vector<ParticleMap<List<P>>> particlesToSend(numRanks);
 
 #pragma omp parallel
     {
       List<P> outcasts;
 
-      std::vector<std::map<LevelAndIndex, List<P>>> threadLocalParticlesToSend(numRanks);
+      std::vector<ParticleMap<List<P>>> threadLocalParticlesToSend(numRanks);
 
       // Collect particles owned by this rank/thread, but on the other realm.
       a_otherContainer.transferParticlesToSingleList(outcasts, a_otherContainer.getParticles());
@@ -894,7 +894,7 @@ ParticleContainer<P>::addParticlesDestructive(ParticleContainer<P>& a_otherConta
 
     // If using MPI then we have to scatter the particles across MPI ranks.
 #ifdef CH_MPI
-    std::map<LevelAndIndex, List<P>> receivedParticles;
+    ParticleMap<List<P>> receivedParticles;
 
     ParticleOps::scatterParticles(receivedParticles, particlesToSend);
 
@@ -987,21 +987,21 @@ ParticleContainer<P>::remap()
   //    5) If using MPI, scatter the particles to the appropriate ranks.
   //    6) Assign particles locally from the particles that were scattered to this rank.
 
-  const unsigned int numRanks = numProc();
-  const unsigned int myRank   = procID();
+  const uint32_t numRanks = numProc();
+  const uint32_t myRank   = procID();
 
-  using LevelAndIndex = std::pair<unsigned int, unsigned int>;
+  using LevelAndIndex = std::pair<uint32_t, uint32_t>;
 
   // These are the particles that get sent to each MPI rank. The pair contains the grid level and grid index.
   // Each MPI rank (and OpenMP thread) goes through it's particles and checks if they've falled off the grid. If they have,
   // then the particles are moved onto appropriate lists that will get sent to each rank.
-  std::vector<std::map<LevelAndIndex, List<P>>> particlesToSend(numRanks);
+  std::vector<ParticleMap<List<P>>> particlesToSend(numRanks);
 
 #pragma omp parallel
   {
     List<P> outcasts;
 
-    std::vector<std::map<LevelAndIndex, List<P>>> threadLocalParticlesToSend(numRanks);
+    std::vector<ParticleMap<List<P>>> threadLocalParticlesToSend(numRanks);
 
     // Collect particles owned by this rank/thread.
     this->transferParticlesToSingleList(outcasts, m_particles);
@@ -1019,7 +1019,7 @@ ParticleContainer<P>::remap()
 
   // If using MPI then we have to scatter the particles across MPI ranks.
 #ifdef CH_MPI
-  std::map<LevelAndIndex, List<P>> receivedParticles;
+  ParticleMap<List<P>> receivedParticles;
 
   ParticleOps::scatterParticles(receivedParticles, particlesToSend);
 
@@ -1107,14 +1107,13 @@ ParticleContainer<P>::copyParticlesToSingleList(List<P>& a_list, const AMRPartic
 
 template <typename P>
 inline void
-ParticleContainer<P>::mapParticlesToAMRGrid(
-  std::vector<std::map<std::pair<unsigned int, unsigned int>, List<P>>>& a_mappedParticles,
-  List<P>&                                                               a_unmappedParticles) const noexcept
+ParticleContainer<P>::mapParticlesToAMRGrid(std::vector<ParticleMap<List<P>>>& a_mappedParticles,
+                                            List<P>&                           a_unmappedParticles) const noexcept
 {
   CH_TIME("ParticleContainer::mapParticlesToAMRGrid");
 
-  const unsigned int numRanks = numProc();
-  const unsigned int myRank   = procID();
+  const uint32_t numRanks = numProc();
+  const uint32_t myRank   = procID();
 
   std::vector<RealVect> quasiDx(1 + m_finestLevel);
 
@@ -1135,20 +1134,20 @@ ParticleContainer<P>::mapParticlesToAMRGrid(
 
       if (myLevelTiles.find(particleTile) != myLevelTiles.end()) {
         // Found the particle on this level and this rank is the one who owns it.
-        const unsigned int gridIndex = myLevelTiles.at(particleTile);
-        const unsigned int toRank    = myRank;
+        const uint32_t gridIndex = myLevelTiles.at(particleTile);
+        const uint32_t toRank    = myRank;
 
-        a_mappedParticles[toRank][std::pair<unsigned int, unsigned int>(lvl, gridIndex)].transfer(lit);
+        a_mappedParticles[toRank][std::pair<uint32_t, uint32_t>(lvl, gridIndex)].transfer(lit);
 
         foundTile = true;
       }
 #ifdef CH_MPI
       else if (otherLevelTiles.find(particleTile) != otherLevelTiles.end()) {
         // Particle was found on this level but no on this rank.
-        const unsigned int  gridIndex = otherLevelTiles.at(particleTile).first;
-        const unsigned int& toRank    = otherLevelTiles.at(particleTile).second;
+        const uint32_t  gridIndex = otherLevelTiles.at(particleTile).first;
+        const uint32_t& toRank    = otherLevelTiles.at(particleTile).second;
 
-        a_mappedParticles[toRank][std::pair<unsigned int, unsigned int>(lvl, gridIndex)].transfer(lit);
+        a_mappedParticles[toRank][std::pair<uint32_t, uint32_t>(lvl, gridIndex)].transfer(lit);
 
         foundTile = true;
       }
@@ -1167,18 +1166,17 @@ ParticleContainer<P>::mapParticlesToAMRGrid(
 
 template <typename P>
 inline void
-ParticleContainer<P>::catenateParticleMaps(
-  std::vector<std::map<std::pair<unsigned int, unsigned int>, List<P>>>& a_globalParticles,
-  std::vector<std::map<std::pair<unsigned int, unsigned int>, List<P>>>& a_localParticles) const noexcept
+ParticleContainer<P>::catenateParticleMaps(std::vector<ParticleMap<List<P>>>& a_globalParticles,
+                                           std::vector<ParticleMap<List<P>>>& a_localParticles) const noexcept
 {
   CH_TIME("ParticleContainer::catenateParticleMaps");
 
-  const unsigned int numRanks = numProc();
+  const uint32_t numRanks = numProc();
 
-  using LevelAndIndex = std::pair<unsigned int, unsigned int>;
+  using LevelAndIndex = std::pair<uint32_t, uint32_t>;
 
   for (int irank = 0; irank < numRanks; irank++) {
-    std::map<LevelAndIndex, List<P>>& globalParticles = a_globalParticles[irank];
+    ParticleMap<List<P>>& globalParticles = a_globalParticles[irank];
 
     for (auto& m : a_localParticles[irank]) {
       globalParticles[m.first].catenate(m.second);
@@ -1188,8 +1186,8 @@ ParticleContainer<P>::catenateParticleMaps(
 
 template <typename P>
 inline void
-ParticleContainer<P>::assignLocalParticles(std::map<std::pair<unsigned int, unsigned int>, List<P>>& a_mappedParticles,
-                                           AMRParticles<P>& a_particleData) const noexcept
+ParticleContainer<P>::assignLocalParticles(ParticleMap<List<P>>& a_mappedParticles,
+                                           AMRParticles<P>&      a_particleData) const noexcept
 {
   CH_TIME("ParticleContainer::assignLocalParticles");
 
@@ -1200,9 +1198,9 @@ ParticleContainer<P>::assignLocalParticles(std::map<std::pair<unsigned int, unsi
       for (auto mapIter = a_mappedParticles.begin(); mapIter != a_mappedParticles.end(); mapIter++) {
 #pragma omp task firstprivate(mapIter)
         {
-          const unsigned int gridLevel = mapIter->first.first;
-          const unsigned int gridIndex = mapIter->first.second;
-          const DataIndex    din       = m_levelTiles[gridLevel]->getMyGrids().at(gridIndex);
+          const uint32_t  gridLevel = mapIter->first.first;
+          const uint32_t  gridIndex = mapIter->first.second;
+          const DataIndex din       = m_levelTiles[gridLevel]->getMyGrids().at(gridIndex);
 
           List<P>& particles   = mapIter->second;
           List<P>& myParticles = (*a_particleData[gridLevel])[din].listItems();
@@ -1259,6 +1257,44 @@ ParticleContainer<P>::preRegrid(const int a_lmin)
 
 template <class P>
 void
+ParticleContainer<P>::resetParticleIDs() noexcept
+{
+  CH_TIME("ParticleContainer::resetParticleIDs");
+  if (m_verbose) {
+    pout() << "ParticleContainer::resetParticleIDs" << endl;
+  }
+
+  CH_assert(m_isDefined);
+  if (m_isOrganizedByCell) {
+    MayDay::Error("ParticleContainer::preRegrid - particles are sorted by cell!");
+  }
+
+  int32_t counter = 0;
+
+  const int32_t myRank = static_cast<uint32_t>(procID());
+
+  for (int lvl = 0; lvl <= m_finestLevel; lvl++) {
+    const DisjointBoxLayout& dbl = m_grids[lvl];
+    const DataIterator&      dit = dbl.dataIterator();
+
+    const int nbox = dit.size();
+
+#pragma omp parallel for schedule(runtime)
+    for (int mybox = 0; mybox < nbox; mybox++) {
+      const DataIndex& din = dit[mybox];
+
+      List<P>& particles = (*m_particles[lvl])[din].listItems();
+
+      for (ListIterator<P> lit(particles); lit.ok(); ++lit, counter++) {
+        lit().rankID()     = myRank;
+        lit().particleID() = counter;
+      }
+    }
+  }
+}
+
+template <class P>
+void
 ParticleContainer<P>::regrid(const Vector<DisjointBoxLayout>&         a_grids,
                              const Vector<ProblemDomain>&             a_domains,
                              const Vector<Real>&                      a_dx,
@@ -1297,21 +1333,21 @@ ParticleContainer<P>::regrid(const Vector<DisjointBoxLayout>&         a_grids,
   this->setupParticleData(a_lmin, m_finestLevel);
 
   // Perform the remapping operation.
-  const unsigned int numRanks = numProc();
-  const unsigned int myRank   = procID();
+  const uint32_t numRanks = numProc();
+  const uint32_t myRank   = procID();
 
-  using LevelAndIndex = std::pair<unsigned int, unsigned int>;
+  using LevelAndIndex = std::pair<uint32_t, uint32_t>;
 
   // These are the particles that get sent to each MPI rank. The pair contains the grid level and grid index.
   // Each MPI rank (and OpenMP thread) goes through it's particles and checks if they've falled off the grid. If they have,
   // then the particles are moved onto appropriate lists that will get sent to each rank.
-  std::vector<std::map<LevelAndIndex, List<P>>> particlesToSend(numRanks);
+  std::vector<ParticleMap<List<P>>> particlesToSend(numRanks);
 
 #pragma omp parallel
   {
     List<P> outcasts;
 
-    std::vector<std::map<LevelAndIndex, List<P>>> threadLocalParticlesToSend(numRanks);
+    std::vector<ParticleMap<List<P>>> threadLocalParticlesToSend(numRanks);
 
     // Collect particles owned by this rank/thread.
     this->transferParticlesToSingleList(outcasts, m_cacheParticles);
@@ -1329,7 +1365,7 @@ ParticleContainer<P>::regrid(const Vector<DisjointBoxLayout>&         a_grids,
 
   // If using MPI then we have to scatter the particles across MPI ranks.
 #ifdef CH_MPI
-  std::map<LevelAndIndex, List<P>> receivedParticles;
+  ParticleMap<List<P>> receivedParticles;
 
   ParticleOps::scatterParticles(receivedParticles, particlesToSend);
 
@@ -1568,27 +1604,29 @@ ParticleContainer<P>::copyMaskParticles(const int a_level, const LevelData<BaseF
   for (int mybox = 0; mybox < nbox; mybox++) {
     const DataIndex& din = dit[mybox];
 
-    const BaseFab<bool>& mask    = a_mask[din];
-    const Box            gridBox = m_grids[a_level][din];
-    const Box            maskBox = mask.box();
+    const BaseFab<bool>& mask = a_mask[din];
 
-    CH_assert(gridBox == maskBox);
+    if (mask.isUsable()) {
+      const Box gridBox = m_grids[a_level][din];
+      const Box maskBox = mask.box();
 
-    List<P>&       maskParticles = (*m_maskParticles[a_level])[din].listItems();
-    const List<P>& particles     = (*m_particles[a_level])[din].listItems();
+      CH_assert(gridBox == maskBox);
 
-    for (ListIterator<P> lit(particles); lit.ok(); ++lit) {
-      const RealVect x  = lit().position();
-      const IntVect  iv = IntVect(D_DECL(std::floor((x[0] - m_probLo[0]) / dx[0]),
-                                        std::floor((x[1] - m_probLo[1]) / dx[1]),
-                                        std::floor((x[2] - m_probLo[2]) / dx[2])));
-      if (!(maskBox.contains(iv))) {
-        std::cout << a_level << "\t" << iv << "\t" << x << "\t" << maskBox << std::endl;
+      List<P>&       maskParticles = (*m_maskParticles[a_level])[din].listItems();
+      const List<P>& particles     = (*m_particles[a_level])[din].listItems();
 
-        MayDay::Error("ParticleContainer::copyMaskParticles -- logic bust. Particle has fallen off grid");
-      }
-      else if (mask(iv)) {
-        maskParticles.add(lit());
+      for (ListIterator<P> lit(particles); lit.ok(); ++lit) {
+        const RealVect x  = lit().position();
+        const IntVect  iv = ParticleOps::getParticleCellIndex(x, m_probLo, dx);
+
+        if (!(maskBox.contains(iv))) {
+          std::cout << a_level << "\t" << iv << "\t" << x << "\t" << maskBox << std::endl;
+
+          MayDay::Error("ParticleContainer::copyMaskParticles -- logic bust. Particle has fallen off grid");
+        }
+        else if (mask(iv)) {
+          maskParticles.add(lit());
+        }
       }
     }
   }
@@ -1632,33 +1670,35 @@ ParticleContainer<P>::transferMaskParticles(const int a_level, const LevelData<B
   for (int mybox = 0; mybox < nbox; mybox++) {
     const DataIndex& din = dit[mybox];
 
-    const BaseFab<bool>& mask    = a_mask[din];
-    const Box            gridBox = m_grids[a_level][din];
-    const Box            maskBox = mask.box();
+    const BaseFab<bool>& mask = a_mask[din];
 
-    CH_assert(gridBox == maskBox);
+    if (mask.isUsable()) {
+      const Box gridBox = m_grids[a_level][din];
+      const Box maskBox = mask.box();
 
-    List<P>&       maskParticles = (*m_maskParticles[a_level])[din].listItems();
-    const List<P>& particles     = (*m_particles[a_level])[din].listItems();
+      CH_assert(gridBox == maskBox);
 
-    for (ListIterator<P> lit(particles); lit.ok();) {
-      const RealVect x  = lit().position();
-      const IntVect  iv = IntVect(D_DECL(std::floor((x[0] - m_probLo[0]) / dx[0]),
-                                        std::floor((x[1] - m_probLo[1]) / dx[1]),
-                                        std::floor((x[2] - m_probLo[2]) / dx[2])));
-      if (!(maskBox.contains(iv))) {
-        //        std::cout << a_level << "\t" << iv << "\t" << x << std::endl;
+      List<P>&       maskParticles = (*m_maskParticles[a_level])[din].listItems();
+      const List<P>& particles     = (*m_particles[a_level])[din].listItems();
 
-        MayDay::Warning("ParticleContainer::transferMaskParticles -- logic bust. Particle has fallen off grid");
+      for (ListIterator<P> lit(particles); lit.ok();) {
+        const RealVect x  = lit().position();
+        const IntVect  iv = ParticleOps::getParticleCellIndex(x, m_probLo, dx);
 
-        ++lit;
-      }
-      else {
-        if (mask(iv)) {
-          maskParticles.transfer(lit);
+        if (!(maskBox.contains(iv))) {
+          //        std::cout << a_level << "\t" << iv << "\t" << x << std::endl;
+
+          MayDay::Warning("ParticleContainer::transferMaskParticles -- logic bust. Particle has fallen off grid");
+
+          ++lit;
         }
         else {
-          ++lit;
+          if (mask(iv)) {
+            maskParticles.transfer(lit);
+          }
+          else {
+            ++lit;
+          }
         }
       }
     }

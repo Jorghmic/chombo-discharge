@@ -75,6 +75,7 @@ public:
     @param[in] a_mflgCoFi      Coarsening of fine level grids
     @param[in] a_mflgCoar      Coarse grids
     @param[in] a_mflgCoarMG    Multigrid-grids
+    @param[in] a_validCells    Valid grid cells (will be null on MG levels)
     @param[in] a_interpolator  Interpolator
     @param[in] a_fluxReg       Flux register
     @param[in] a_coarAve       Coarsener
@@ -98,7 +99,9 @@ public:
     @param[in] a_ghostCellsPhi Ghost cells in data holders
     @param[in] a_jumpOrder     Stencil order to use on jump cells
     @param[in] a_jumpWeights   Weights for least squares stencils on jump cells
+    @param[in] a_smoothPreCond Number of smoothings in the preconditioner
     @param[in] a_smoother      Which smoother to use
+    @param[in] a_relaxFactor   Relaxation factor
   */
   MFHelmholtzOp(const Location::Cell                             a_dataLocation,
                 const MFLevelGrid&                               a_mflgFine,
@@ -109,6 +112,7 @@ public:
                 const MFMultigridInterpolator&                   a_interpolator,
                 const MFReflux&                                  a_fluxReg,
                 const MFCoarAve&                                 a_coarAve,
+                const RefCountedPtr<LevelData<BaseFab<bool>>>&   a_validCells,
                 const RefCountedPtr<MFHelmholtzDomainBCFactory>& a_domainBC,
                 const RefCountedPtr<MFHelmholtzEBBCFactory>&     a_ebBC,
                 const RefCountedPtr<MFHelmholtzJumpBCFactory>&   a_jumpBcFactory,
@@ -129,12 +133,14 @@ public:
                 const IntVect&                                   a_ghostRhs,
                 const int&                                       a_jumpOrder,
                 const int&                                       a_jumpWeight,
-                const Smoother&                                  a_smoother);
+                const int&                                       a_preCondSmooth,
+                const Smoother&                                  a_smoother,
+                const Real&                                      a_relaxFactor);
 
   /*!
     @brief Destructor. 
   */
-  ~MFHelmholtzOp();
+  virtual ~MFHelmholtzOp();
 
   /*!
     @brief No copy assigment allowed
@@ -609,6 +615,11 @@ protected:
   RefCountedPtr<LevelData<BaseIVFAB<Real>>> m_jump;
 
   /*!
+    @brief Valid grid cells (will be nullpointer on MG levels)
+  */
+  RefCountedPtr<LevelData<BaseFab<bool>>> m_validCells;
+
+  /*!
     @brief Dirichlet BC values for each phase
   */
   std::map<int, RefCountedPtr<LevelData<BaseIVFAB<Real>>>> m_dirichletBcValues;
@@ -677,6 +688,11 @@ protected:
     @brief Has MG objects or not.
   */
   bool m_hasMGObjects;
+
+  /*!
+    @brief Number of smoothings in the preconditioner
+  */
+  int m_numSmoothPreCond;
 
   /*!
     @brief Number of phases

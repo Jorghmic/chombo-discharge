@@ -3,16 +3,15 @@ import sys
 
 # Write an options file. This should be a separate routine
 def write_template(args):
-    app_dir = args.discharge_home + "/" + args.base_dir + "/" + args.app_name
+    app_dir = args.base_dir + "/" + args.app_name
     options_filename = app_dir + "/template.inputs"
     optf = open(options_filename, 'w')
     
     # Write plasma kinetics options
     optf.write("# ====================================================================================================\n")
-    optf.write('# Voltage curve\n')
+    optf.write('# Voltage settings\n')
     optf.write("# ====================================================================================================\n")
-    optf.write(args.app_name + ".potential = 1\n")
-    optf.write(args.app_name + ".basename  = pout\n")
+    optf.write("voltage = 1.0\n")
     optf.write('\n')
 
     options_files = [args.discharge_home + "/Source/AmrMesh/CD_AmrMesh.options", \
@@ -22,7 +21,6 @@ def write_template(args):
                      args.discharge_home + "/Source/ItoDiffusion/CD_" + args.ito_solver + ".options",\
                      args.discharge_home + "/Source/SurfaceODESolver/CD_SurfaceODESolver.options",\
                      args.discharge_home + "/Source/RadiativeTransfer/CD_McPhoto.options",\
-                     args.discharge_home + "/Source/Geometry/CD_GeoCoarsener.options",\
                      args.discharge_home + "/Geometries/" + args.geometry + "/CD_" + args.geometry + ".options", \
                      args.discharge_home + "/Physics/ItoKMC/TimeSteppers/" + args.time_stepper + "/CD_" + args.time_stepper + ".options", \
                      args.discharge_home + "/Physics/ItoKMC/PlasmaModels/" + args.physics + "/CD_" + args.physics + ".options"]

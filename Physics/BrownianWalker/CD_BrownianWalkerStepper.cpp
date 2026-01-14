@@ -380,10 +380,12 @@ BrownianWalkerStepper::preRegrid(const int a_lbase, const int a_oldFinestLevel)
   m_amr->allocate(m_regridPPC, m_realm, m_phase, 1);
 
   // Deposit mass to scratch data holder. Then make sure the number of particles per cell
-  m_solver->depositParticles<ItoParticle, &ItoParticle::weight>(m_regridPPC,
-                                                                m_solver->getParticles(ItoSolver::WhichContainer::Bulk),
-                                                                DepositionType::NGP,
-                                                                CoarseFineDeposition::Interp);
+  m_solver->depositParticles<ItoParticle, const Real&, &ItoParticle::weight>(
+    m_regridPPC,
+    m_solver->getParticles(ItoSolver::WhichContainer::Bulk),
+    DepositionType::NGP,
+    CoarseFineDeposition::Interp);
+
   for (int lvl = 0; lvl <= m_amr->getFinestLevel(); lvl++) {
     const Real dx = m_amr->getDx()[lvl];
     const Real dV = std::pow(dx, SpaceDim);
@@ -701,7 +703,7 @@ BrownianWalkerStepper::loadBalanceBoxesMesh(Vector<Vector<int>>&             a_p
     }
 
     // If running with MPI, loads must be gathered on all ranks.
-    ParallelOps::vectorSum(loads);
+    ParallelOps::sum(loads);
 
     // Sort the boxes and loads using a Morton code. Then load balance the application.
     LoadBalancing::sort(boxes, loads, BoxSorting::Morton);
@@ -785,7 +787,7 @@ BrownianWalkerStepper::loadBalanceBoxesParticles(Vector<Vector<int>>&           
     }
 
     // If running with MPI, loads must be gathered on all ranks.
-    ParallelOps::vectorSum(loads);
+    ParallelOps::sum(loads);
 
     // Sort the boxes and loads using a Morton code. Then load balance the application.
     LoadBalancing::sort(boxes, loads, BoxSorting::Morton);
@@ -830,7 +832,7 @@ BrownianWalkerStepper::getCheckpointLoads(const std::string a_realm, const int a
   }
 
   // If running with MPI, loads must be gathered on all ranks.
-  ParallelOps::vectorSum(loads);
+  ParallelOps::sum(loads);
 
   return loads;
 }

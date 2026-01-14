@@ -71,9 +71,20 @@ namespace Physics {
 	V is a grid cell volume.
 	@param[in] E Electric field magnitude in SI units. 
 	@param[in] V Volume
-	@param[in] x Physical coordinates
+	@param[in] dx Grid resolution
+	@param[in] dt Time step	
+	@param[in] x Physical coordinate
+	@param[in] phi List of plasma species densities
       */
-      using FunctionEVX = std::function<Real(const Real E, const Real V, const RealVect x)>;
+      using FunctionEVXTP = std::function<
+        Real(const Real E, const Real V, const Real dx, const Real dt, const RealVect x, const Vector<Real>& phi)>;
+
+      /*!
+	@brief Function which encapsulates 
+	@param[in] dx Grid resolution
+	@param[in] dx List of plasma species densities.
+      */
+      using FunctionDXP = std::function<Real(const Real dx, const Vector<Real>& phi)>;
 
       /*!
 	@brief Function for encapsulating a function f = f(T) where T is the temperature of some species
@@ -343,7 +354,7 @@ namespace Physics {
       /*!
 	@brief Function-based plasma reaction rates. Same index as the actual reactions.
       */
-      std::vector<FunctionEVX> m_kmcReactionRates;
+      std::vector<FunctionEVXTP> m_kmcReactionRates;
 
       /*!
 	@brief Function-based plasma reaction rates as if they appeared in the reaction rate equation. Same index as actual reactions. 
@@ -395,6 +406,16 @@ namespace Physics {
 	@brief Flag if the user wants to compute the alpha coefficient from the reactions 
       */
       std::pair<bool, std::string> m_autoEta;
+
+      /*!
+	@brief List of dielectric field emission reactions.
+      */
+      std::vector<std::pair<int, FunctionEN>> m_dielectricFieldEmission;
+
+      /*!
+	@brief List of electrode field emission reactions.
+      */
+      std::vector<std::pair<int, FunctionEN>> m_electrodeFieldEmission;
 
       /*!
 	@brief Townsend ionization coefficient. Defined during parseAlpha
@@ -585,6 +606,12 @@ namespace Physics {
       initializeParticles();
 
       /*!
+	@brief Parse initial densities for CDR and Ito species. 
+      */
+      virtual void
+      initializeDensities();
+
+      /*!
 	@brief Initialize mobility functions
       */
       virtual void
@@ -626,6 +653,12 @@ namespace Physics {
       */
       virtual void
       initializeSurfaceEmission(const std::string a_surface);
+
+      /*!
+	@brief Initialize field emission reactions
+      */
+      virtual void
+      initializeFieldEmission();
 
       /*!
 	@brief Initialize the particle placement algorithm
@@ -673,7 +706,7 @@ namespace Physics {
 	@return This should return a tuple of KMC and fluid rates. The KMC rate will also be multiplied by background species on the 
 	left hand side of the reaction.
       */
-      virtual std::pair<FunctionEVX, FunctionEX>
+      virtual std::pair<FunctionEVXTP, FunctionEX>
       parsePlasmaReactionRate(const nlohmann::json&    a_reactionJSON,
                               const std::list<size_t>& a_backgroundReactants,
                               const std::list<size_t>& a_plasmaReactants) const;
@@ -691,6 +724,12 @@ namespace Physics {
       */
       virtual std::pair<bool, std::string>
       parsePlasmaReactionGradientCorrection(const nlohmann::json& a_reactionJSON) const;
+
+      /*!
+        @brief Parse whether or not a reaction should be a part of the time step calculation. Returns 1 if the reaction is a part of it.
+      */
+      virtual Real
+      parsePlasmaReactionDt(const nlohmann::json& a_reactionJSON) const;
 
       /*!
 	@brief Parse a table which is stored in E/N format
@@ -718,7 +757,8 @@ namespace Physics {
 	@param[in] a_E       Electric field
 	@param[in] a_pos     Physical position
 	@param[in] a_phi     Plasma species densities
-	@param[in] a_gradPhi Density gradients for plasma species. 
+	@param[in] a_gradPhi Density gradients for plasma species.
+	@param[in] a_dt      Time step
 	@param[in] a_dx      Grid resolution
 	@param[in] a_kappa   Cut-cell volume fraction
       */
@@ -728,6 +768,7 @@ namespace Physics {
                           const RealVect                                   a_pos,
                           const Vector<Real>&                              a_phi,
                           const Vector<RealVect>&                          a_gradPhi,
+                          const Real                                       a_dt,
                           const Real                                       a_dx,
                           const Real                                       a_kappa) const noexcept override;
 

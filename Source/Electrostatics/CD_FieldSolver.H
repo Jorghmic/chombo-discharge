@@ -78,7 +78,7 @@ public:
     @param[in] a_permittivityCell Permittivity on cell center
     @param[in] a_permittivityFace Permittivity on faces
     @param[in] a_permittivityEB   Permittivity on EB
-    @note Used by FieldSolverMultigrid to change permittivities/conductivities under the hood of the multigrid solver.
+    @note Used by FieldSolverGMG to change permittivities/conductivities under the hood of the multigrid solver.
   */
   virtual void
   setSolverPermittivities(const MFAMRCellData& a_permittivityCell,
@@ -437,7 +437,8 @@ public:
   /*!
     @brief Compute the capacitance. 
     @details This will first obtain a solution without any sources, and then compute the energy density. The capacitance is then C = 2*EnergyDensity/(V*V)
-    @return Capacitance for system. 
+    @return Capacitance for system.
+    @note This will set up a new solve and change the underlying solver coefficients. Use with caution!
   */
   Real
   computeCapacitance();
@@ -823,6 +824,13 @@ protected:
   */
   virtual std::string
   makeBcString(const int a_dir, const Side::LoHiSide a_side) const;
+
+  /*!
+    @brief Utility routine that fills the gas-side covered cells by the potential from the closest electrode
+    @param[in,out] a_phi Potential
+  */
+  virtual void
+  fillCoveredPotential(MFAMRCellData& a_phi) const noexcept;
 };
 
 #include <CD_NamespaceFooter.H>

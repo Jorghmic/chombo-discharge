@@ -35,20 +35,21 @@ inline ItoKMCPhysics::ItoKMCPhysics() noexcept
   m_photoReactions.clear();
 
   // Some default settings (mostly in case user forgets to call the parsing algorithms).
-  m_isDefined         = false;
-  m_debug             = true;
-  m_hasKMCSolver      = false;
-  m_downstreamSpecies = -1;
-  m_maxNewParticles   = 32;
-  m_maxNewPhotons     = 32;
-  m_Ncrit             = 5;
-  m_eps               = 2.0;
-  m_NSSA              = 5;
-  m_maxIter           = 10;
-  m_SSAlim            = 5.0;
-  m_exitTol           = 1.E-6;
-  m_algorithm         = Algorithm::ExplicitEuler;
-  m_particlePlacement = ParticlePlacement::Random;
+  m_isDefined             = false;
+  m_debug                 = true;
+  m_hasKMCSolver          = false;
+  m_incrementNewParticles = false;
+  m_downstreamSpecies     = -1;
+  m_maxNewParticles       = 32;
+  m_maxNewPhotons         = 32;
+  m_Ncrit                 = 5;
+  m_eps                   = 2.0;
+  m_NSSA                  = 5;
+  m_maxIter               = 10;
+  m_SSAlim                = 5.0;
+  m_exitTol               = 1.E-6;
+  m_algorithm             = Algorithm::ExplicitEuler;
+  m_particlePlacement     = ParticlePlacement::Random;
 }
 
 inline ItoKMCPhysics::~ItoKMCPhysics() noexcept
@@ -218,6 +219,7 @@ ItoKMCPhysics::parsePPC() noexcept
 
   pp.get("max_new_particles", m_maxNewParticles);
   pp.get("max_new_photons", m_maxNewPhotons);
+  pp.get("increment_weights", m_incrementNewParticles);
 }
 
 inline void
@@ -297,6 +299,12 @@ ItoKMCPhysics::getRtSpecies() const
   return m_rtSpecies;
 }
 
+inline const Vector<DiffusionFunction>&
+ItoKMCPhysics::getItoDiffusionFunctions() const noexcept
+{
+  return m_itoDiffusionFunctions;
+}
+
 inline int
 ItoKMCPhysics::getNumItoSpecies() const
 {
@@ -330,8 +338,7 @@ ItoKMCPhysics::initialSigma(const Real a_time, const RealVect a_pos) const
 inline void
 ItoKMCPhysics::advanceKMC(Vector<FPR>&            a_numParticles,
                           Vector<FPR>&            a_numNewPhotons,
-                          Real&                   a_criticalDt,
-                          Real&                   a_nonCriticalDt,
+                          Real&                   a_physicsDt,
                           const Vector<Real>&     a_phi,
                           const Vector<RealVect>& a_gradPhi,
                           const Real              a_dt,
@@ -396,7 +403,7 @@ ItoKMCPhysics::advanceKMC(Vector<FPR>&            a_numParticles,
   const long long chargeBefore = m_debug ? computeCharge() : 0LL;
 
   // Update the reaction rates to be used by the KMC solver.
-  this->updateReactionRates(m_kmcReactionsThreadLocal, a_E, a_pos, a_phi, a_gradPhi, a_dx, a_kappa);
+  this->updateReactionRates(m_kmcReactionsThreadLocal, a_E, a_pos, a_phi, a_gradPhi, a_dt, a_dx, a_kappa);
 
   // Run the KMC solver.
   switch (m_algorithm) {
@@ -464,17 +471,41 @@ ItoKMCPhysics::advanceKMC(Vector<FPR>&            a_numParticles,
     MayDay::Warning("ItoKMCPhysics::advanceKMC -- charge not conserved!");
   }
 
-  // Compute the critical and non-critical time steps
-  const auto partitionedReactions = m_kmcSolver.partitionReactions(m_kmcState);
+  // This loop is for isolating reactions that the user will explicitly ask to fire before computing the physics-based time step. It exists
+  // because if there are no electrons but lots of ions, one may get a time step that is too large because X/|sum mu| is zero for the electrons.
+  // Similarly, one may get a time step that is too small away from ionization regions because X/|sum mu| may be tiny if there is, say, 1 electron
+  // but lots of detachment.
+  auto getPropensitiesDt = [&](const KMCState& a_state) -> std::vector<Real> {
+    std::vector<Real> propensities = m_kmcSolver.propensities(a_state, m_kmcReactionsThreadLocal);
 
-  const auto& criticalReactions    = partitionedReactions.first;
-  const auto& nonCriticalReactions = partitionedReactions.second;
+    for (int i = 0; i < propensities.size(); i++) {
+      propensities[i] *= m_reactiveDtFactors[i];
+    }
 
-  const auto criticalPropensities    = m_kmcSolver.propensities(m_kmcState, criticalReactions);
-  const auto nonCriticalPropensities = m_kmcSolver.propensities(m_kmcState, nonCriticalReactions);
+    return propensities;
+  };
 
-  a_criticalDt    = m_kmcSolver.getCriticalTimeStep(criticalPropensities);
-  a_nonCriticalDt = m_kmcSolver.getNonCriticalTimeStep(m_kmcState, nonCriticalReactions, nonCriticalPropensities);
+  // Do a time step limitation on the complete state, using the user-specified reactions.
+  const auto propensitiesDt = getPropensitiesDt(m_kmcState);
+  const auto physicsDt      = m_kmcSolver.computeDt(m_kmcState, m_kmcReactionsThreadLocal, propensitiesDt, 1.0);
+
+  a_physicsDt = std::min(a_physicsDt, physicsDt);
+
+  // Go through reactions that are potentially detaching species and do the calculation again.
+  for (const auto& reaction : m_kmcReactionsThreadLocal) {
+    auto       S = m_kmcState;
+    const auto N = reaction->computeCriticalNumberOfReactions(m_kmcState);
+
+    // Trigger on both the reactions and the reactions with completely consumed reactants
+    if (N < std::numeric_limits<FPR>::max()) {
+      reaction->advanceState(S, N);
+
+      const auto propensitiesDt = getPropensitiesDt(S);
+      const auto physicsDt      = m_kmcSolver.computeDt(S, m_kmcReactionsThreadLocal, propensitiesDt, 1.0);
+
+      a_physicsDt = std::min(a_physicsDt, physicsDt);
+    }
+  }
 }
 
 inline void
@@ -507,14 +538,14 @@ ItoKMCPhysics::reconcileParticles(Vector<List<ItoParticle>*>& a_particles,
       if (numNew < (FPR)0) {
         MayDay::Warning("ItoKMCPhysics::reconcileParticles - new number of particles is < 0 (overflow issue?)");
       }
-      else if ((long long)numNew < 0LL) {
+      else if (static_cast<long long>(numNew) < 0LL) {
         MayDay::Warning("ItoKMCPhysics::reconcileParticles - integer overflow!");
       }
 
       if (numOld < 0) {
         MayDay::Warning("ItoKMCPhysics::reconcileParticles - old number of particles is < 0");
       }
-      else if ((long long)numOld < 0LL) {
+      else if (static_cast<long long>(numOld) < 0LL) {
         MayDay::Warning("ItoKMCPhysics::reconcileParticles - integer overflow for old particles!");
       }
     }
@@ -550,54 +581,68 @@ ItoKMCPhysics::reconcileParticles(Vector<List<ItoParticle>*>& a_particles,
 
   CH_START(t2);
   for (int i = 0; i < a_particles.size(); i++) {
-    const long long diff = (long long)(a_newNumParticles[i] - a_oldNumParticles[i]);
+    const long long diff = static_cast<long long>(a_newNumParticles[i] - a_oldNumParticles[i]);
 
     if (diff > 0LL) {
-      // Adding particles, which is fairly simple. Just choose weights for the particles and go.
-      const std::vector<long long> particleWeights = ParticleManagement::partitionParticleWeights(
-        diff,
-        (long long)m_maxNewParticles);
+      const long long numParticles = static_cast<long long>(a_particles[i]->length());
 
-      for (const auto& w : particleWeights) {
-        RealVect x = RealVect::Zero;
+      if (numParticles > 0LL && m_incrementNewParticles) {
+        // If the cell already contains particles, partition the new particle weights and increment the existing particles
+        const std::vector<long long> particleWeights = ParticleManagement::partitionParticleWeights(diff, numParticles);
 
-        // Figure out where to place the particles.
-        switch (m_particlePlacement) {
-        case ParticlePlacement::Centroid: {
-          x = a_cellPos + a_centroidPos * a_dx;
+        ListIterator<ItoParticle> lit(*a_particles[i]);
 
-          break;
+        for (int j = 0; lit.ok() && j < particleWeights.size(); ++lit, j++) {
+          lit().weight() += 1.0 * particleWeights[j];
         }
-        case ParticlePlacement::Random: {
-          x = Random::randomPosition(a_cellPos, a_lo, a_hi, a_bndryCentroid, a_bndryNormal, a_dx, a_kappa);
+      }
+      else {
+        // Adding new particles, which is fairly simple. Just choose weights for the particles and go with one of the placement algorithms.
+        const std::vector<long long> particleWeights = ParticleManagement::partitionParticleWeights(
+          diff,
+          static_cast<long long>(m_maxNewParticles));
 
-          break;
-        }
-        case ParticlePlacement::Downstream: {
-          if (hasDownstream) {
-            x = Random::randomPosition(upstreamLo, upstreamHi, upstreamPosition, v);
+        for (const auto& w : particleWeights) {
+          RealVect x = RealVect::Zero;
 
-            if ((x - a_bndryCentroid).dotProduct(a_bndryNormal) < 0.0) {
-              x = upstreamPosition;
+          // Figure out where to place the particles.
+          switch (m_particlePlacement) {
+          case ParticlePlacement::Centroid: {
+            x = a_cellPos + a_centroidPos * a_dx;
+
+            break;
+          }
+          case ParticlePlacement::Random: {
+            x = Random::randomPosition(a_cellPos, a_lo, a_hi, a_bndryCentroid, a_bndryNormal, a_dx, a_kappa);
+
+            break;
+          }
+          case ParticlePlacement::Downstream: {
+            if (hasDownstream) {
+              x = Random::randomPosition(upstreamLo, upstreamHi, upstreamPosition, v);
+
+              if ((x - a_bndryCentroid).dotProduct(a_bndryNormal) < 0.0) {
+                x = upstreamPosition;
+              }
+
+              x = a_cellPos + x * a_dx;
+            }
+            else {
+
+              x = Random::randomPosition(a_cellPos, a_lo, a_hi, a_bndryCentroid, a_bndryNormal, a_dx, a_kappa);
             }
 
-            x = a_cellPos + x * a_dx;
+            break;
           }
-          else {
+          default: {
+            MayDay::Error("ItoKMCPhysics::reconcileParticles - logic bust");
 
-            x = Random::randomPosition(a_cellPos, a_lo, a_hi, a_bndryCentroid, a_bndryNormal, a_dx, a_kappa);
+            break;
+          }
           }
 
-          break;
+          a_particles[i]->add(ItoParticle(1.0 * w, x));
         }
-        default: {
-          MayDay::Error("ItoKMCPhysics::reconcileParticles - logic bust");
-
-          break;
-        }
-        }
-
-        a_particles[i]->add(ItoParticle(1.0 * w, x));
       }
     }
     else if (diff < 0LL) {
@@ -681,7 +726,7 @@ ItoKMCPhysics::removeParticles(List<ItoParticle>& a_particles, const long long a
     long long W = zero;
 
     for (ListIterator<ItoParticle> lit(a_particles); lit.ok(); ++lit) {
-      W += (long long)lit().weight();
+      W += llround(lit().weight());
 
       if (lit().weight() < 1.0) {
         MayDay::Error("ItoKMCPhysics::removeParticles -- bad particle mass!");
@@ -751,8 +796,8 @@ ItoKMCPhysics::reconcilePhotons(Vector<List<Photon>*>& a_newPhotons,
     if (a_numNewPhotons[i] > 0LL) {
 
       const std::vector<long long> photonWeights = ParticleManagement::partitionParticleWeights(
-        (long long)a_numNewPhotons[i],
-        (long long)m_maxNewPhotons);
+        static_cast<long long>(a_numNewPhotons[i]),
+        static_cast<long long>(m_maxNewPhotons));
 
       for (const auto& w : photonWeights) {
         const RealVect x = Random::randomPosition(a_cellPos, a_lo, a_hi, a_bndryCentroid, a_bndryNormal, a_dx, a_kappa);
@@ -808,6 +853,41 @@ ItoKMCPhysics::reconcilePhotoionization(Vector<List<ItoParticle>*>&   a_itoParti
       }
     }
   }
+}
+
+inline RealVect
+ItoKMCPhysics::noDiffusion(const ItoParticle& a_particle, const Real a_dt) const noexcept
+{
+  return RealVect::Zero;
+}
+
+inline RealVect
+ItoKMCPhysics::isotropicDiffusion(const ItoParticle& a_particle, const Real a_dt) const noexcept
+{
+  RealVect r = RealVect::Zero;
+
+  for (int dir = 0; dir < SpaceDim; dir++) {
+    r[dir] = Random::getNormal01();
+  }
+
+  return sqrt(2.0 * a_particle.diffusion() * a_dt) * r;
+}
+
+inline RealVect
+ItoKMCPhysics::forwardIsotropicDiffusion(const ItoParticle& a_particle, const Real a_dt) const noexcept
+{
+  RealVect hop = this->isotropicDiffusion(a_particle, a_dt);
+
+  const RealVect v = a_particle.velocity();
+
+  if (v != RealVect::Zero) {
+    const RealVect u = v / v.vectorLength();
+    const Real     d = u.dotProduct(hop);
+
+    hop -= std::min(d, 0.0) * u;
+  }
+
+  return hop;
 }
 
 #include <CD_NamespaceFooter.H>

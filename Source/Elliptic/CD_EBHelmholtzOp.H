@@ -76,6 +76,7 @@ public:
     @param[in] a_eblgCoFi      Coarsening of fine level grids
     @param[in] a_eblgCoar      Coarse grids
     @param[in] a_eblgCoarMG    Multigrid-grids
+    @param[in] a_validCells    Valid grid cells
     @param[in] a_interpolator  Interpolator
     @param[in] a_fluxReg       Flux register
     @param[in] a_coarAve       Coarsener
@@ -96,6 +97,7 @@ public:
     @param[in] a_ghostCellsPhi Ghost cells in data holders
     @param[in] a_ghostCellsPhi Ghost cells in data holders
     @param[in] a_smoother      Which smoother to use
+    @param[in] a_relaxFactor   Relaxation factor
   */
   EBHelmholtzOp(const Location::Cell                             a_dataLocation,
                 const EBLevelGrid&                               a_eblgFine,
@@ -103,6 +105,7 @@ public:
                 const EBLevelGrid&                               a_eblgCoFi,
                 const EBLevelGrid&                               a_eblgCoar,
                 const EBLevelGrid&                               a_eblgCoarMG,
+                const RefCountedPtr<LevelData<BaseFab<bool>>>&   a_validCells,
                 const RefCountedPtr<EBMultigridInterpolator>&    a_interpolator,
                 const RefCountedPtr<EBReflux>&                   a_fluxReg,
                 const RefCountedPtr<EBCoarAve>&                  a_coarAve,
@@ -122,7 +125,8 @@ public:
                 const RefCountedPtr<LevelData<BaseIVFAB<Real>>>& a_BcoIrreg,
                 const IntVect&                                   a_ghostCellsPhi,
                 const IntVect&                                   a_ghostCellsRHS,
-                const Smoother&                                  a_smoother);
+                const Smoother&                                  a_smoother,
+                const Real&                                      a_relaxFactor);
 
   /*!
     @brief Dtor
@@ -552,6 +556,14 @@ public:
   scale(LevelData<EBCellFAB>& a_lhs, const Real& a_scale) override final;
 
   /*!
+    @brief Local scaling function. Multiplies the left-hand side by the right-hand side.
+    @param[out] a_lhs. Equal to a_lhs*a_rhs on output
+    @param[in]  a_rhs. Scaling data
+  */
+  void
+  scaleLocal(LevelData<EBCellFAB>& a_lhs, const LevelData<EBCellFAB>& a_rhs) const noexcept;
+
+  /*!
     @brief Compute norm of data
     @param[in]
     @details a_order is currently ignored as we call a static routine in EBAMRPoissonOp for now. 
@@ -838,6 +850,12 @@ public:
   LevelData<EBFluxFAB>&
   getFlux() const;
 
+  /*!
+    @brief Returns m_relCoef. Used by MFHelmholtzOp
+  */
+  const LevelData<EBCellFAB>&
+  getRelaxationCoeff() const noexcept;
+
 protected:
   /*!
     @brief Number of components that we solve for (always one..)
@@ -905,6 +923,11 @@ protected:
   int m_refToFine;
 
   /*!
+    @brief Number of smoothings in the preconditioner
+  */
+  int m_numSmoothPreCond;
+
+  /*!
     @brief Do coarse-fine interpolation or not. 
     @note Used by MFHelmholtzOp for optimizing how calls in EBHelmholtzOp are made
   */
@@ -946,6 +969,11 @@ protected:
     @brief Grid resolution;
   */
   Real m_dx;
+
+  /*!
+    @brief Successive over-relaxation factor (Must be >= 1).
+  */
+  Real m_relaxFactor;
 
   /*!
     @brief Vector resolution
@@ -1011,6 +1039,11 @@ protected:
     @brief Prolongation operator for MG levels
   */
   EBMGProlong m_prolongOpMG;
+
+  /*!
+    @brief Valid grid cells (might be nullptr on MG levels)
+  */
+  RefCountedPtr<LevelData<BaseFab<bool>>> m_validCells;
 
   /*!
     @brief Domain bc object

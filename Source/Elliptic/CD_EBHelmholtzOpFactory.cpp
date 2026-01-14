@@ -27,6 +27,7 @@ EBHelmholtzOpFactory::EBHelmholtzOpFactory(const Location::Cell    a_dataLocatio
                                            const Real&             a_beta,
                                            const RealVect&         a_probLo,
                                            const AmrLevelGrids&    a_amrLevelGrids,
+                                           const AmrMask&          a_validCells,
                                            const AmrInterpolators& a_amrInterpolators,
                                            const AmrFluxRegisters& a_amrFluxRegisters,
                                            const AmrCoarseners&    a_amrCoarseners,
@@ -40,6 +41,7 @@ EBHelmholtzOpFactory::EBHelmholtzOpFactory(const Location::Cell    a_dataLocatio
                                            const IntVect&          a_ghostPhi,
                                            const IntVect&          a_ghostRhs,
                                            const Smoother&         a_smoother,
+                                           const Real&             a_relaxFactor,
                                            const ProblemDomain&    a_bottomDomain,
                                            const int&              a_mgBlockingFactor,
                                            const AmrLevelGrids&    a_deeperLevelGrids)
@@ -54,6 +56,7 @@ EBHelmholtzOpFactory::EBHelmholtzOpFactory(const Location::Cell    a_dataLocatio
   m_probLo = a_probLo;
 
   m_amrLevelGrids    = a_amrLevelGrids;
+  m_validCells       = a_validCells;
   m_amrInterpolators = a_amrInterpolators;
   m_amrFluxRegisters = a_amrFluxRegisters;
   m_amrCoarseners    = a_amrCoarseners;
@@ -71,6 +74,7 @@ EBHelmholtzOpFactory::EBHelmholtzOpFactory(const Location::Cell    a_dataLocatio
   m_ghostRhs = a_ghostRhs;
 
   m_smoother         = a_smoother;
+  m_relaxFactor      = a_relaxFactor;
   m_bottomDomain     = a_bottomDomain;
   m_mgBlockingFactor = a_mgBlockingFactor;
   m_deeperLevelGrids = a_deeperLevelGrids;
@@ -449,6 +453,7 @@ EBHelmholtzOpFactory::MGnewOp(const ProblemDomain& a_fineDomain, int a_depth, bo
   RefCountedPtr<EBReflux>                fluxReg;      // Only if defined on an AMR level
   RefCountedPtr<EBCoarAve>               coarsener;    // Only if defined on an AMR level
 
+  RefCountedPtr<LevelData<BaseFab<bool>>>   validCells; // Might be nullptr
   RefCountedPtr<LevelData<EBCellFAB>>       Acoef;      // Always defined.
   RefCountedPtr<LevelData<EBFluxFAB>>       Bcoef;      // Always defined.
   RefCountedPtr<LevelData<BaseIVFAB<Real>>> BcoefIrreg; // Always defined.
@@ -461,6 +466,7 @@ EBHelmholtzOpFactory::MGnewOp(const ProblemDomain& a_fineDomain, int a_depth, bo
     Bcoef      = m_amrBcoef[amrLevel];
     BcoefIrreg = m_amrBcoefIrreg[amrLevel];
 
+    validCells   = m_validCells[amrLevel];
     interpolator = m_amrInterpolators[amrLevel];
     fluxReg      = m_amrFluxRegisters[amrLevel];
     coarsener    = m_amrCoarseners[amrLevel];
@@ -522,6 +528,7 @@ EBHelmholtzOpFactory::MGnewOp(const ProblemDomain& a_fineDomain, int a_depth, bo
                              EBLevelGrid(), // Multigrid operator, so no cofi.
                              EBLevelGrid(), // Multigrid operator, so no coarse.
                              eblgMgCoar,
+                             validCells,   // Defined if an amr level
                              interpolator, // Defined if an amr level
                              fluxReg,      // Defined if an amr level
                              coarsener,    // Defined if an amr level
@@ -541,7 +548,8 @@ EBHelmholtzOpFactory::MGnewOp(const ProblemDomain& a_fineDomain, int a_depth, bo
                              BcoefIrreg,
                              m_ghostPhi,
                              m_ghostRhs,
-                             m_smoother);
+                             m_smoother,
+                             m_relaxFactor);
   }
 
   return mgOp;
@@ -603,6 +611,7 @@ EBHelmholtzOpFactory::AMRnewOp(const ProblemDomain& a_domain)
                          eblgCoFi,
                          eblgCoar,
                          eblgCoarMG,
+                         m_validCells[amrLevel],
                          m_amrInterpolators[amrLevel],
                          m_amrFluxRegisters[amrLevel],
                          m_amrCoarseners[amrLevel],
@@ -622,7 +631,8 @@ EBHelmholtzOpFactory::AMRnewOp(const ProblemDomain& a_domain)
                          m_amrBcoefIrreg[amrLevel],
                          m_ghostPhi,
                          m_ghostRhs,
-                         m_smoother);
+                         m_smoother,
+                         m_relaxFactor);
 
   return op;
 }

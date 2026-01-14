@@ -3,14 +3,13 @@ import sys
 
 # Write an options file. This should be a separate routine
 def write_template(args):
-    app_dir = args.discharge_home + "/" + args.base_dir + "/" + args.app_name
+    app_dir = args.base_dir + "/" + args.app_name
     options_filename = app_dir + "/template.inputs"
     optf = open(options_filename, 'w')
     
     # Write plasma kinetics options
     options_files = [args.discharge_home + "/Source/AmrMesh/CD_AmrMesh.options", \
                      args.discharge_home + "/Source/Driver/CD_Driver.options", \
-                     args.discharge_home + "/Source/Geometry/CD_GeoCoarsener.options", \
                      args.discharge_home + "/Geometries/" + args.geometry + "/CD_" + args.geometry + ".options"]
                      
     for opt in options_files:
