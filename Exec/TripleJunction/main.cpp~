@@ -7,6 +7,7 @@
 #include <CD_MechanicalShaft.H>
 #include <CD_ItoKMCGodunovStepper.H>
 #include <CD_ItoKMCStreamerTagger.H>
+#include "ParmParse.H"
 
 using namespace ChomboDischarge;
 using namespace Physics::ItoKMC;
@@ -25,10 +26,27 @@ main(int argc, char* argv[])
   auto tagger      = RefCountedPtr<CellTagger>(new ItoKMCStreamerTagger<ItoKMCStepper<>>(physics, timestepper, amr));
   auto engine      = RefCountedPtr<Driver>(new Driver(geometry, timestepper, amr, tagger));
 
-  Real U0 = 1.0;
+  Real g_potential;
+    // Build class options from input script and command line options                                                                                                                     
+  const std::string input_file = argv[1];
+  ParmParse parmp(argc-2, argv+2, NULL, input_file.c_str());
 
-  ParmParse pp("ItoKMC");
-  pp.get("potential", U0);
+
+  //Get potential from input script                                                                                                                                                    
+  std::string basename;
+  {
+     ParmParse parp("ItoKMC");
+     pp.get("potential", g_potential);
+     pp.get("basename",  basename);
+     setPoutBaseName(basename);
+     }
+
+  
+     Real U0 = g_potential;
+     
+     //Real U0;
+     //ParmParse pp("ItoKMC");
+     //pp.get("potential", U0);
   timestepper->setVoltage([=](const Real t) -> Real {
     return U0;
   });
