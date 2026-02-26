@@ -1,0 +1,20 @@
+# This file is hand-written in order to ensure that mu*N and D*N are constant
+# for the ions as a function of N.
+#
+# The following values are used:
+#
+# mu = 2E-4 (at 1 bar)
+# D  = 5E-6 (at 1 bar)
+
+
+E/N (Td)	Mobility *N (1/m/V/s)
+10	4.827E21
+100	4.827E21
+1000	4.827E21
+ 
+
+E/N (Td)	Diffusion coefficient *N (1/m/s)
+10	1.206E20
+100	1.206E20
+1000	1.206E20
+ 

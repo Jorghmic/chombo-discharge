@@ -103,7 +103,7 @@
 	    "initial particles" : [
 		{
 		    "sphere distribution" : {
-			"center" : [ 15.1e-3, 7.4e-3, 0 ],
+			"center" : [ 1.751E-3, 9.9E-3, 0 ],
                         "radius": 80E-6,
 			"weight" : 1,
                         "num particles": 500
@@ -282,7 +282,8 @@
 	{
 	    "reaction": "Y + (O2) -> e + O2+"
 	}
-    ],    "dielectric emission":
+    ],
+    "dielectric emission":
     [
 	{
 	    "reaction": "Y -> @",
@@ -299,18 +300,6 @@
 	    "@": ["e", "(null)"],
 	    "efficiencies": [0.01,0.99]	    
 	}		
-    ],
-    "electrode emission":
-    [
-    	{
-    	    "reaction": "N2+ -> @",
-    	    "@": ["e", "(null)"],
-    	    "efficiencies": [0.01, 0.99]
-    	},
-    	{
-    	    "reaction": "O2+ -> @",
-    	    "@": ["e", "(null)"],
-    	    "efficiencies": [0.01, 0.99]
-    	}
-    ]	
+    ]        
 }
+

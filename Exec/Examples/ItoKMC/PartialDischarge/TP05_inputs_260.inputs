@@ -1,7 +1,7 @@
 # ====================================================================================================
 # Voltage curve
 # ====================================================================================================
-ItoKMC.potential = 29E3
+ItoKMC.potential = 2.75746171e+04
 
 
 # ====================================================================================================
@@ -49,7 +49,7 @@ Driver.initial_regrids              = 0                   ## Number of initial r
 Driver.do_init_load_balance         = false               ## If true, load balance the first step in a fresh simulation.
 Driver.start_time                   = 0                   ## Start time (fresh simulations only).
 Driver.stop_time                    = 20                   ## Stop time.
-Driver.max_steps                    = 2000                  ## Maximum number of steps.
+Driver.max_steps = 4000
 Driver.geometry_only                = false               ## Special option that ONLY plots the geometry.
 Driver.write_memory                 = false               ## Write MPI memory report.
 Driver.write_loads                  = false               ## Write (accumulated) computational loads.
@@ -59,7 +59,7 @@ Driver.max_plot_depth               = -1                  ## Restrict maximum pl
 Driver.max_chk_depth                = -1                  ## Restrict chechkpoint depth (-1 => finest simulation level).
 Driver.num_plot_ghost               = 1                   ## Number of ghost cells to include in plots.
 Driver.plt_vars                     = levelset            ## 'tags', 'mpi_rank', 'levelset', 'loads'.
-Driver.restart                      = 0000                   ## Restart step (less or equal to 0 implies fresh simulation).
+Driver.restart = 2000
 Driver.allow_coarsening             = true                ## Allows removal of grid levels according to CellTagger.
 Driver.grow_geo_tags                = 2                   ## How much to grow tags when using geometry-based refinement.
 Driver.refine_angles                = 15.                 ## Refine cells if angle between elements exceed this value.

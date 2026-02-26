@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --account=nn9636k
-#SBATCH --job-name=TP10
-#SBATCH --time=0-0:20:00
+#SBATCH --job-name=TriplePo22
+#SBATCH --time=0-0:10:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=128
 #SBATCH --qos=preproc
@@ -22,7 +22,7 @@ module load OpenBLAS/0.3.23-GCC-12.3.0
 executable=main2d.Linux.64.mpic++.gfortran.OPTHIGH.MPI.ex
 
 # Input files. Must be copied to where we run the simulation. 
-input_file=example.inputs
+input_file=TriplePo21_inputs_200.inputs
 chemistry_file=chemistry.json
 particle_file=initial_particles.dat
 bolsig_air=bolsig_air.dat
