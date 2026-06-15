@@ -1,0 +1,300 @@
+#!/usr/bin/env python3
+
+import math
+import subprocess
+import sys
+import re
+from pathlib import Path
+
+INPUT_FILE = Path("t.inputs")
+JOB_NAME = "L31_p"
+USER = "jorgehm"
+
+PARAM_POTENTIAL = "ItoKMC.potential"
+PARAM_RESTART = "Driver.restart"
+PARAM_MAXSTEPS = "Driver.max_steps"
+PARAM_STOPTIME = "Driver.stop_time"
+
+# ---------------------------------------------------------------------
+# SLURM TEMPLATE (NO .format() — uses safe placeholder replacement)
+# ---------------------------------------------------------------------
+SLURM_TEMPLATE = r"""#!/bin/bash
+#SBATCH --account=nn9636k
+#SBATCH --job-name=__JOB_NAME__
+#SBATCH --time=0-2:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=128
+#SBATCH --qos=preproc
+#SBATCH --mem-per-cpu=1000M
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+module restore system
+module load foss/2023a
+module load HDF5/1.14.0-gompi-2023a
+module load OpenBLAS/0.3.23-GCC-12.3.0
+
+executable=main2d.Linux.64.mpic++.gfortran.OPTHIGH.MPI.ex
+input_file=__INPUT_FILE__
+chemistry_file=chemistry.json
+particle_file=initial_particles.dat
+bolsig_air=bolsig_air.dat
+electron_transport=electron_transport.dat
+ion_transport=ion_transport.dat
+
+workdir=${USERWORK}/__JOB_NAME__
+mkdir -p "$workdir"
+
+export CH_OUTPUT_INTERVAL=9999999
+
+cp -f $executable $workdir/
+cp -f $input_file $workdir/
+cp -f $chemistry_file $workdir/
+cp -f -L $particle_file $workdir/
+cp -f $bolsig_air $workdir/
+cp -f $electron_transport $workdir/
+cp -f $ion_transport $workdir/
+
+base_job_name="__BASE_JOB_NAME__"
+
+if [ -n "$base_job_name" ]; then
+    base_workdir=${USERWORK}/$base_job_name
+    echo "Dependency job: copying chk from $base_workdir/chk -> $workdir/chk"
+
+    if [ ! -d "$base_workdir/chk" ]; then
+        echo "ERROR: base checkpoint directory not found: $base_workdir/chk" >&2
+        exit 1
+    fi
+
+    mkdir -p "$workdir/chk"
+    cp -a "$base_workdir/chk/." "$workdir/chk/"
+fi
+
+lfs setstripe --stripe-count 8 --stripe-size 64M $workdir
+cd $workdir
+
+# ---------------------------------------------------------------------
+# AUTO-DETECT RESTART (DEPENDENT JOBS ONLY)
+# ---------------------------------------------------------------------
+restart_override_args=""
+
+if [ -n "$base_job_name" ]; then
+    chkdir="$workdir/chk"
+
+    if [ ! -d "$chkdir" ]; then
+        echo "ERROR: chk directory missing after copy: $chkdir" >&2
+        exit 1
+    fi
+
+    # Find highest sim.checkXXXX.2d.hdf5
+    maxchk=$(ls "$chkdir"/sim.check*.2d.hdf5 2>/dev/null \
+        | sed -E 's/.*sim\.check0*([0-9]+)\.2d\.hdf5/\1/' \
+        | sort -n \
+        | tail -1)
+
+    if [ -z "$maxchk" ]; then
+        echo "ERROR: No checkpoint files found in $chkdir" >&2
+        exit 1
+    fi
+
+    block_steps=$(awk -F= '/^[[:space:]]*Driver\.max_steps[[:space:]]*=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$input_file")
+
+    if [ -z "$block_steps" ]; then
+        echo "ERROR: Could not read Driver.max_steps from $input_file" >&2
+        exit 1
+    fi
+
+    new_max_steps=$((maxchk + block_steps + 1000))
+
+    echo "Auto-detected restart from chk/: restart=$maxchk"
+    echo "Setting max_steps = restart + block_steps = $new_max_steps"
+
+    restart_override_args="Driver.restart=$maxchk Driver.max_steps=$new_max_steps"
+fi
+
+mpirun ./$executable $input_file Driver.initial_regrids=0 $restart_override_args
+"""
+
+# ---------------------------------------------------------------------
+# INPUT FILE UTILITIES
+# ---------------------------------------------------------------------
+def read_inputs():
+    return INPUT_FILE.read_text()
+
+
+def set_param(text, name, value):
+    pattern = rf"^{re.escape(name)}\s*=.*$"
+    replacement = f"{name} = {value}"
+
+    if re.search(pattern, text, re.MULTILINE):
+        return re.sub(pattern, replacement, text, flags=re.MULTILINE)
+    else:
+        return text + f"\n{name} = {value}\n"
+
+
+def get_param(text, name):
+    match = re.search(
+        rf"^{re.escape(name)}\s*=\s*([^\n#]+)",
+        text,
+        re.MULTILINE,
+    )
+    if not match:
+        raise RuntimeError(f"{name} not found in inputs file")
+    return float(match.group(1))
+
+
+# ---------------------------------------------------------------------
+# SLURM FILE GENERATION
+# ---------------------------------------------------------------------
+def write_slurm_file(input_file, job_name, base_job_name=""):
+    filename = f"{input_file}.slurm"
+    content = SLURM_TEMPLATE
+    content = content.replace("__JOB_NAME__", job_name)
+    content = content.replace("__INPUT_FILE__", input_file)
+    content = content.replace("__BASE_JOB_NAME__", base_job_name)
+
+    with open(filename, "w") as f:
+        f.write(content)
+
+    return filename
+
+
+def submit_job(slurm_file, dependency=None):
+    cmd = ["sbatch"]
+
+    if dependency:
+        cmd.append(f"--dependency=afterok:{dependency}")
+
+    cmd.append(slurm_file)
+
+    out = subprocess.check_output(cmd, text=True)
+    return out.strip().split()[-1]
+
+
+# ---------------------------------------------------------------------
+# BUILD INPUTS FOR EACH PHASE
+# ---------------------------------------------------------------------
+def build_input_for_phase(base_text, phase_deg, *, potential0, block_steps, stop_time, double_time=False):
+    new_potential = potential0 * math.sin(math.radians(phase_deg))
+
+    text = base_text
+    text = set_param(text, PARAM_POTENTIAL, f"{new_potential:.8e}")
+    text = set_param(text, PARAM_RESTART, 0)
+    text = set_param(text, PARAM_MAXSTEPS, int(block_steps))
+
+    new_stop_time = stop_time * 2 if double_time else stop_time
+    text = set_param(text, PARAM_STOPTIME, f"{new_stop_time:.8e}")
+
+    return text, new_potential
+
+
+# ---------------------------------------------------------------------
+# MAIN LOGIC
+# ----------------------------------------------------------------
+
+
+def main(phases):
+    phases = [float(p) for p in phases]
+
+    base_text = read_inputs()
+
+    potential0 = get_param(base_text, PARAM_POTENTIAL)
+    block_steps = int(get_param(base_text, PARAM_MAXSTEPS))
+    initial_stop_time = get_param(base_text, PARAM_STOPTIME)
+
+    # amount added per continuation
+    delta_stop_time = initial_stop_time
+
+    previous_job_id = None
+    previous_job_name = ""
+
+    for idx, phase in enumerate(phases):
+
+        # -------------------------------------------------------------
+        # cumulative stop time:
+        #
+        # first job:      stop_time = base
+        # second job:     stop_time = base + 200 ns
+        # third job:      stop_time = base + 400 ns
+        # etc.
+        # -------------------------------------------------------------
+        current_stop_time = initial_stop_time + idx * delta_stop_time
+
+        new_potential = potential0 * math.sin(math.radians(phase))
+
+        text = base_text
+
+        text = set_param(
+            text,
+            PARAM_POTENTIAL,
+            f"{new_potential:.8e}",
+        )
+
+        text = set_param(
+            text,
+            PARAM_STOPTIME,
+            f"{current_stop_time:.8e}",
+        )
+
+        # first job starts fresh
+        if idx == 0:
+            text = set_param(text, PARAM_RESTART, 0)
+            text = set_param(text, PARAM_MAXSTEPS, block_steps)
+        else:
+            # placeholders only
+            # actual restart/max_steps overridden in slurm script
+            text = set_param(text, PARAM_RESTART, 0)
+            text = set_param(text, PARAM_MAXSTEPS, block_steps)
+
+        input_file = f"{JOB_NAME}_inputs_{int(phase)}.inputs"
+        Path(input_file).write_text(text)
+
+        job_name = f"{JOB_NAME}_{int(phase)}"
+
+        # -------------------------------------------------------------
+        # first job = no dependency
+        # all others depend on previous job
+        # -------------------------------------------------------------
+        slurm_file = write_slurm_file(
+            input_file,
+            job_name,
+            previous_job_name,
+        )
+
+        if previous_job_id is None:
+            job_id = submit_job(slurm_file)
+        else:
+            job_id = submit_job(
+                slurm_file,
+                dependency=previous_job_id,
+            )
+
+        print(
+            f"phase {phase:6.1f}: "
+            f"potential={new_potential:.3e}, "
+            f"stop_time={current_stop_time:.3e}"
+        )
+
+        if previous_job_id:
+            print(
+                f" submitted job {job_id} "
+                f"(afterok:{previous_job_id})\n"
+            )
+        else:
+            print(
+                f" submitted base job {job_id}\n"
+            )
+
+        previous_job_id = job_id
+        previous_job_name = job_name
+
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python script.py <base_phase> [dep_phase ...]")
+        sys.exit(1)
+
+    main(sys.argv[1:])

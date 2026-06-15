@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 INPUT_FILE = Path("example.inputs")
-JOB_NAME = "TP07"
+JOB_NAME = "TP50"
 USER = "jorgehm"
 
 PARAM_POTENTIAL = "ItoKMC.potential"
@@ -20,7 +20,7 @@ PARAM_MAXSTEPS = "Driver.max_steps"
 SLURM_TEMPLATE = """#!/bin/bash
 #SBATCH --account=nn9636k
 #SBATCH --job-name=__JOB_NAME__
-#SBATCH --time=0-0:10:00
+#SBATCH --time=0-0:30:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=128
 #SBATCH --qos=preproc
@@ -91,10 +91,11 @@ if [ -n "$base_job_name" ]; then
   fi
 
   # Find highest sim.checkXXXX.2d.hdf5
-  maxchk=$(ls "$chkdir"/sim.check*.2d.hdf5 2>/dev/null \
-           | sed -E 's/.*sim\.check0*([0-9]+)\.2d\.hdf5/\1/' \
-           | sort -n \
-           | tail -1)
+  maxchk=$(printf '%s\n' "$chkdir"/sim.check*.2d.hdf5 \
+  | sed -E 's/.*sim\.check0*([0-9]+)\.2d\.hdf5.*/\1/' \
+  | tr -cd '0-9\n' \
+  | sort -n \
+  | tail -1)
 
   if [ -z "$maxchk" ]; then
     echo "ERROR: No checkpoint files found in $chkdir" >&2
@@ -115,6 +116,8 @@ if [ -n "$base_job_name" ]; then
 
   restart_override_args="Driver.restart=$maxchk Driver.max_steps=$new_max_steps"
 fi
+
+
 
 mpirun ./$executable $input_file Driver.initial_regrids=1 $restart_override_args
 """

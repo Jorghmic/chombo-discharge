@@ -1,7 +1,8 @@
 # ====================================================================================================
 # Voltage curve
 # ====================================================================================================
-ItoKMC.potential = -26E3
+ItoKMC.potential = 31E3
+
 
 # ====================================================================================================
 # AmrMesh class options
@@ -34,31 +35,31 @@ AmrMesh.redist_radius        = 1              ## Redistribution radius for hyper
 # ====================================================================================================
 # Driver class options
 # ====================================================================================================
-Driver.verbosity                    = 2                   ## Driver verbosity.
+Driver.verbosity                    = 2                  ## Driver verbosity.
 Driver.geometry_generation          = chombo-discharge    ## Grid generation method, 'chombo-discharge' or 'chombo'
 Driver.geometry_scan_level          = 0                   ## Geometry scan level for chombo-discharge geometry generator
 Driver.ebis_memory_load_balance     = false               ## If using Chombo geo-gen, use memory as loads for EBIS generation
 Driver.output_dt                    = -1.0                ## Output interval (values <= 0 enforces step-based output)
-Driver.plot_interval                = 10                  ## Plot interval
-Driver.checkpoint_interval          = 10                 ## Checkpoint interval
+Driver.plot_interval                = 100                  ## Plot interval
+Driver.checkpoint_interval          = 500                 ## Checkpoint interval
 Driver.regrid_interval              = 10                   ## Regrid interval
 Driver.write_regrid_files           = false               ## Write or do not write plot files during regrids.
 Driver.write_restart_files          = false               ## Write or do not write plot files during restart or not.
 Driver.initial_regrids              = 0                   ## Number of initial regrids.
 Driver.do_init_load_balance         = false               ## If true, load balance the first step in a fresh simulation.
 Driver.start_time                   = 0                   ## Start time (fresh simulations only).
-Driver.stop_time                    = 1                   ## Stop time.
-Driver.max_steps                    = 500                  ## Maximum number of steps.
+Driver.stop_time                    = 600e-9                   ## Stop time.
+Driver.max_steps                    = 34000                  ## Maximum number of steps.
 Driver.geometry_only                = false               ## Special option that ONLY plots the geometry.
 Driver.write_memory                 = false               ## Write MPI memory report.
 Driver.write_loads                  = false               ## Write (accumulated) computational loads.
 Driver.output_directory             = ./                  ## Output directory.
-Driver.output_names                 = simulation          ## Simulation output names.
+Driver.output_names                 = sim          ## Simulation output names.
 Driver.max_plot_depth               = -1                  ## Restrict maximum plot depth (-1 => finest simulation level).
 Driver.max_chk_depth                = -1                  ## Restrict chechkpoint depth (-1 => finest simulation level).
 Driver.num_plot_ghost               = 1                   ## Number of ghost cells to include in plots.
 Driver.plt_vars                     = levelset            ## 'tags', 'mpi_rank', 'levelset', 'loads'.
-Driver.restart                      = 0                   ## Restart step (less or equal to 0 implies fresh simulation).
+Driver.restart                      = 14500                   ## Restart step (less or equal to 0 implies fresh simulation).
 Driver.allow_coarsening             = true                ## Allows removal of grid levels according to CellTagger.
 Driver.grow_geo_tags                = 2                   ## How much to grow tags when using geometry-based refinement.
 Driver.refine_angles                = 15.                 ## Refine cells if angle between elements exceed this value.
@@ -82,7 +83,7 @@ CdrCTU.plot_mode                = density                   ## Plot densities 'd
 CdrCTU.blend_conservation       = true                      ## Turn on/off blending with nonconservative divergenceo
 CdrCTU.which_redistribution     = volume                    ## Redistribution type. 'volume', 'mass', or 'none' (turned off)
 CdrCTU.use_regrid_slopes        = true                      ## Turn on/off slopes when regridding
-CdrCTU.gmg_verbosity            = -1                        ## GMG verbosity
+CdrCTU.gmg_verbosity            = 99                        ## GMG verbosity
 CdrCTU.gmg_pre_smooth           = 12                        ## Number of relaxations in GMG downsweep
 CdrCTU.gmg_post_smooth          = 12                        ## Number of relaxations in upsweep
 CdrCTU.gmg_bott_smooth          = 12                        ## NUmber of relaxations before dropping to bottom solver

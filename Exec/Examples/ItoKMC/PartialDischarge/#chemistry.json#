@@ -1,4 +1,4 @@
-{
+61;7600;1c{
     "gas" : {
 	"background species" : [
 	    {
@@ -101,8 +101,13 @@
 		"points" : 1000
 	    },
 	    "initial particles" : [
-		
-		    "sphe
+		{
+		    "sphere distribution" : {
+			"center" : [ 15.1e-3, 7.4e-3, 0 ],
+                        "radius": 80E-6,
+			"weight" : 1,
+                        "num particles": 500
+		    }
 		}
 	    ]
         },
@@ -277,8 +282,7 @@
 	{
 	    "reaction": "Y + (O2) -> e + O2+"
 	}
-    ],
-    "dielectric emission":
+    ],    "dielectric emission":
     [
 	{
 	    "reaction": "Y -> @",
@@ -310,4 +314,3 @@
     	}
     ]	
 }
-
